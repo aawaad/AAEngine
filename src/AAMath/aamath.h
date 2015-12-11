@@ -73,5 +73,12 @@ inline void SinCos(r32 angle, r32 &a, r32 &b)
     b = cosf(angle);
 }
 
+#include "vec2.h"
+#include "vec3.h"
+#include "vec4.h"
+#include "mat3.h"
+#include "mat4.h"
+#include "quat.h"
+
 #endif
 
