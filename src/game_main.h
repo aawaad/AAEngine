@@ -1,11 +1,13 @@
 #ifndef GAME_MAIN_H
 #define GAME_MAIN_H
 
+/*
 #if AAENGINE_DEBUG
 #define Assert(x) if(!(x)) {*(int *)0 = 0;}
 #else
 #define Assert(x)
 #endif
+*/
 
 #define ArrayCount(arr) (sizeof(arr) / sizeof((arr)[0]))
 #define Swap(a, b) {decltype(a) tmp = (a); (a) = (b); (b) = tmp;}
@@ -20,7 +22,7 @@ struct game_controller_input
 {
     b32 isAnalog;
 
-    v2 leftStickAvg,
+    vec2 leftStickAvg,
        rightStickAvg;
 
     r32 leftTrigger;
@@ -56,7 +58,7 @@ struct game_input
     game_controller_input controllers[5];
 };
 
-internal void GameUpdate();
+static void GameUpdate();
 
 #endif
 

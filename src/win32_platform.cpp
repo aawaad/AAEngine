@@ -1,5 +1,15 @@
+#include <windows.h>
+#define GLEW_STATIC
+#include "glew\glew.h"
+#include <gl\gl.h>
+#include <stdio.h>
+#include <xinput.h>
 #include <stdint.h>
 
+#include "../../AAMath/src/aamath.h"
+using namespace aam;
+
+/*
 typedef int8_t s8;
 typedef uint8_t u8;
 typedef int16_t s16;
@@ -10,18 +20,14 @@ typedef int64_t s64;
 typedef uint64_t u64;
 typedef float r32;
 typedef int32_t b32;
+*/
 
-#define internal static
-#define local_persist static
 #define global_variable static
+#define local_persist static
 
 // NOTE: Unity build (single compilation unit)!
 #include "game_main.cpp"
-
-#include <windows.h>
-#include <gl\gl.h>
-#include <stdio.h>
-#include <xinput.h>
+#include "objloader.cpp"
 
 global_variable b32 GlobalRunning;
 
@@ -83,7 +89,7 @@ X_INPUT_SET_STATE(XInputSetStateStub)
 global_variable x_input_set_state *XInputSetState_ = XInputSetStateStub;
 #define XInputSetState XInputSetState_
 
-internal void LoadXInput()
+static void LoadXInput()
 {
     HMODULE xinputlib = LoadLibrary("xinput1_4.dll");
     if(!xinputlib)
@@ -98,15 +104,15 @@ internal void LoadXInput()
     }
 }
 
-internal void ProcessXInputButton(DWORD buttonState, game_button_state *oldState, DWORD buttonBit, game_button_state *newState)
+static void ProcessXInputButton(DWORD buttonState, game_button_state *oldState, DWORD buttonBit, game_button_state *newState)
 {
     newState->endedDown = (buttonState & buttonBit) == buttonBit;
     newState->halfTransitionCount = (oldState->endedDown != newState->endedDown) ? 1 : 0;
 }
 
-internal v2 ProcessXInputStick(SHORT x, SHORT y, SHORT deadzone)
+static vec2 ProcessXInputStick(SHORT x, SHORT y, SHORT deadzone)
 {
-    v2 result = {};
+    vec2 result = {};
     if(x > deadzone)
     {
         result.x = ((r32)x - (r32)deadzone) / (32767.0f - (r32)deadzone);
@@ -126,14 +132,14 @@ internal v2 ProcessXInputStick(SHORT x, SHORT y, SHORT deadzone)
     return result;
 }
 
-internal void ProcessKeyboardKey(game_button_state *newState, b32 isDown)
+static void ProcessKeyboardKey(game_button_state *newState, b32 isDown)
 {
     Assert(newState->endedDown != isDown);
     newState->endedDown = isDown;
     ++newState->halfTransitionCount;
 }
 
-internal void ProcessWindowsMessages(game_controller_input *keyboardController)
+static void ProcessWindowsMessages(game_controller_input *keyboardController)
 {
     MSG message;
     while(PeekMessage(&message, 0, 0, 0, PM_REMOVE))
@@ -216,72 +222,410 @@ internal void ProcessWindowsMessages(game_controller_input *keyboardController)
     }
 }
 
-internal void FreeFile(void *file)
+static char *ReadShader(char *filename)
 {
-    if(file)
-    {
-        VirtualFree(file, 0, MEM_RELEASE);
-    }
-}
+    char *result;
 
-internal void *ReadEntireFile(char *filename)
-{
-    void *result = 0;
+    size_t size;
+    FILE *file;
+    fopen_s(&file, filename, "rb");
+    fseek(file, 0, SEEK_END);
+    size = ftell(file);
+    rewind(file);
 
-    HANDLE file = CreateFile(filename, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
-    if(file != INVALID_HANDLE_VALUE)
-    {
-        LARGE_INTEGER size;
-        if(GetFileSizeEx(file, &size))
-        {
-            Assert(size.QuadPart <= 0xFFFFFFFF);
-            result = VirtualAlloc(0, size.QuadPart, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
-            if(result)
-            {
-                DWORD bytesRead;
-                if(ReadFile(file, &result, size.LowPart, &bytesRead, 0) && (size.LowPart == bytesRead))
-                {
-                }
-                else
-                {
-                    FreeFile(file);
-                    result = 0;
-                }
-            }
-        }
+    result = (char *)malloc((size + 1) * sizeof(char));
+    fread(result, sizeof(char), size, file);
+    fclose(file);
 
-        CloseHandle(file);
-    }
-
+    result[size] = 0;
     return result;
 }
 
-internal void EnableOpenGL(HWND hWnd, HDC *hDC, HGLRC *hRC)
+static void AddShader(GLuint shaderProgram, const char *pShaderText, GLenum shaderType)
 {
-    *hDC = GetDC(hWnd);
+    GLuint shader = glCreateShader(shaderType);
 
-    s32 format;
+    if(!shader)
+    {
+        // TODO: Logging
+        exit(1);
+    }
 
-    PIXELFORMATDESCRIPTOR pfd = {};
-    pfd.nSize = sizeof(pfd);
-    pfd.nVersion = 1;
-    pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
-    pfd.iPixelType = PFD_TYPE_RGBA;
-    pfd.cColorBits = 24;
-    pfd.cDepthBits = 16;
-    pfd.iLayerType = PFD_MAIN_PLANE;
-    format = ChoosePixelFormat(*hDC, &pfd);
-    SetPixelFormat(*hDC, format, &pfd);
+    const GLchar *p[1];
+    p[0] = pShaderText;
+    GLint len[1];
+    len[0] = (GLint)strlen(pShaderText);
+    glShaderSource(shader, 1, p, len);
+    glCompileShader(shader);
+    
+    GLint success;
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
 
-    *hRC = wglCreateContext(*hDC);
-    wglMakeCurrent(*hDC, *hRC);
+    if(!success)
+    {
+        // TODO: Logging
+        GLchar log[1024];
+        glGetShaderInfoLog(shader, 1024, 0, log);
+        OutputDebugStringA(log);
+        exit(1);
+    }
+
+    glAttachShader(shaderProgram, shader);
 }
 
-internal void DisableOpenGL(HWND hWnd, HDC hDC, HGLRC hRC)
+global_variable GLuint gVArray;
+
+global_variable GLuint gFramebuffer, gDepthTexture;
+global_variable GLuint gQuadBuf;
+
+global_variable GLuint gShaderProgram;
+global_variable GLuint gMVP, gM, gV;
+global_variable GLuint gDepthBiasMVP, gShadowSampler;
+global_variable GLuint gLightInvDir;//, gLightPos;
+global_variable GLuint gSampler;
+
+global_variable GLuint gRTTShaderProgram;
+global_variable GLuint gRTTMVP;
+
+global_variable GLuint gPreviewProgram;
+global_variable GLuint gPreviewSampler;
+
+global_variable simple_mesh *gMeshes[2];
+
+static GLuint CompileShaders(char *vert, char *frag)
 {
+    GLuint shaderProgram = glCreateProgram();
+
+    if(shaderProgram == 0)
+    {
+        // TODO: Logging
+        //exit(1);
+    }
+
+    char *vs = ReadShader(vert);
+    char *fs = ReadShader(frag);
+
+    if(!vs || !fs) exit(1);
+
+    AddShader(shaderProgram, vs, GL_VERTEX_SHADER);
+    AddShader(shaderProgram, fs, GL_FRAGMENT_SHADER);
+
+    GLint success = 0;
+    
+    glLinkProgram(shaderProgram);
+    glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
+    //if(!success) exit(1);
+
+    glValidateProgram(shaderProgram);
+    glGetProgramiv(shaderProgram, GL_VALIDATE_STATUS, &success);
+    //if(!success) exit(1);
+
+    return shaderProgram;
+}
+
+static b32 InitializeRenderToTexture(u32 width, u32 height)
+{
+    glGenFramebuffers(1, &gFramebuffer);
+    glBindFramebuffer(GL_FRAMEBUFFER, gFramebuffer);
+
+    // NOTE: Depth texture
+    glGenRenderbuffers(1, &gDepthTexture);
+    glBindTexture(GL_TEXTURE_2D, gDepthTexture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+    //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_R_TO_TEXTURE);
+    // NOTE: width, height power of 2?
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, width, height, 0, GL_DEPTH_COMPONENT, GL_FLOAT, 0);
+
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, gDepthTexture, 0);
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+
+    return (glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+}
+
+static void TerminateOpenGL(HWND hWnd, HDC hDC, HGLRC hRC)
+{
+    glDeleteProgram(gShaderProgram);
+    glDeleteProgram(gRTTShaderProgram);
+    glDeleteProgram(gPreviewProgram);
+    glDeleteVertexArrays(1, &gVArray);
+
+    for(u32 i = 0; i < ArrayCount(gMeshes); ++i)
+    {
+        glDeleteBuffers(1, &gMeshes[i]->vbuf);
+        glDeleteBuffers(1, &gMeshes[i]->uvbuf);
+        glDeleteBuffers(1, &gMeshes[i]->nbuf);
+        if(gMeshes[i]->material->diffuseTex)
+            glDeleteTextures(1, &gMeshes[i]->material->diffuseTex);
+    }
+
+    glDeleteBuffers(1, &gFramebuffer);
+    glDeleteBuffers(1, &gQuadBuf);
+    glDeleteTextures(1, &gDepthTexture);
+
     wglMakeCurrent(0, 0);
     wglDeleteContext(hRC);
     ReleaseDC(hWnd, hDC);
+}
+
+static void InitializeOpenGL(HWND hWnd, HDC *hDC, HGLRC *hRC, u32 windowWidth, u32 windowHeight)
+{
+    *hDC = GetDC(hWnd);
+
+    PIXELFORMATDESCRIPTOR desiredPFD = {};
+    desiredPFD.nSize = sizeof(desiredPFD);
+    desiredPFD.nVersion = 1;
+    desiredPFD.iPixelType = PFD_TYPE_RGBA;
+    desiredPFD.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
+    desiredPFD.iPixelType = PFD_TYPE_RGBA;
+    desiredPFD.cColorBits = 32;
+    desiredPFD.cAlphaBits = 8;
+    desiredPFD.iLayerType = PFD_MAIN_PLANE;
+
+    s32 suggestedPFIndex = ChoosePixelFormat(*hDC, &desiredPFD);
+    PIXELFORMATDESCRIPTOR suggestedPFD;
+    DescribePixelFormat(*hDC, suggestedPFIndex, sizeof(suggestedPFD), &suggestedPFD);
+    SetPixelFormat(*hDC, suggestedPFIndex, &suggestedPFD);
+
+    *hRC = wglCreateContext(*hDC);
+    if(!wglMakeCurrent(*hDC, *hRC))
+    {
+        TerminateOpenGL(hWnd, *hDC, *hRC);
+        exit(1);
+    }
+
+    // NOTE: GLEW
+    GLenum err = glewInit();
+    if(err != GLEW_OK)
+    {
+        exit(1);
+    }
+    
+    OutputDebugStringA((char *)glGetString(GL_VERSION));
+
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+    glClearColor(1.0f, 0.0f, 1.0f, 1.0f);
+
+    // NOTE: Render to texture
+    InitializeRenderToTexture(1024, 1024);
+
+    const GLfloat quadVerts[] = {
+        -1.0f, -1.0f, 0.0f,
+         1.0f, -1.0f, 0.0f,
+        -1.0f,  1.0f, 0.0f,
+        -1.0f,  1.0f, 0.0f,
+         1.0f, -1.0f, 0.0f,
+         1.0f,  1.0f, 0.0f,
+    };
+
+    glGenBuffers(1, &gQuadBuf);
+    glBindBuffer(GL_ARRAY_BUFFER, gQuadBuf);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVerts), quadVerts, GL_STATIC_DRAW);
+
+    gRTTShaderProgram = CompileShaders("../shaders/rtt.vs", "../shaders/rtt.fs");
+    gRTTMVP = glGetUniformLocation(gRTTShaderProgram, "MVP");
+
+    // NOTE: vertex arrays
+    glGenVertexArrays(1, &gVArray);
+    glBindVertexArray(gVArray);
+
+    // NOTE: Default shaders
+    //gShaderProgram = CompileShaders("../shaders/shader.vs", "../shaders/shader.fs");
+    gShaderProgram = CompileShaders("../shaders/shadowmapping.vs", "../shaders/shadowmapping.fs");
+    //glUseProgram(gShaderProgram);
+
+    // NOTE: Get uniform locations for default shaders
+    gMVP = glGetUniformLocation(gShaderProgram, "MVP");
+    //Assert(gMVP != -1);
+    gM = glGetUniformLocation(gShaderProgram, "M");
+    gV = glGetUniformLocation(gShaderProgram, "V");
+    gDepthBiasMVP = glGetUniformLocation(gShaderProgram, "depthBiasMVP");
+    gShadowSampler = glGetUniformLocation(gShaderProgram, "shadowSampler");
+    gLightInvDir = glGetUniformLocation(gShaderProgram, "lightInvDir");
+    //gLightPos = glGetUniformLocation(gShaderProgram, "lightPos");
+    gSampler = glGetUniformLocation(gShaderProgram, "sampler");
+
+    // NOTE: simple shaders for shadow map preview window
+    gPreviewProgram = CompileShaders("../shaders/basic.vs", "../shaders/basic.fs");
+    gPreviewSampler = glGetUniformLocation(gPreviewProgram, "sampler");
+
+    gMeshes[0] = LoadMesh(L"../data/room_thickwalls.obj");
+    //gMeshes[1] = LoadMesh(L"../data/cube.obj");
+    gMeshes[1] = LoadMesh(L"../data/pig.obj", true);
+}
+
+static void RenderMesh(simple_mesh *mesh, mat4 *view, mat4 *projection, vec3 pos,
+                       mat4 *depthMVP, vec3 *lightInvDir, b32 depthPass = false)
+{
+    if(!depthPass)
+    {
+        // NOTE: MVP
+        mat4 model = Mat4Translation(pos);
+        mat4 mvp = *projection * *view * model;
+
+        local_persist mat4 biasMatrix = {
+            0.5f, 0.0f, 0.0f, 0.0f,
+            0.0f, 0.5f, 0.0f, 0.0f,
+            0.0f, 0.0f, 0.5f, 0.0f,
+            0.5f, 0.5f, 0.5f, 1.0f
+        };
+        mat4 depthBiasMVP = biasMatrix * *depthMVP;
+
+        glUniformMatrix4fv(gMVP, 1, GL_FALSE, &mvp.m[0][0]);
+        glUniformMatrix4fv(gM, 1, GL_FALSE, &model.m[0][0]);
+        glUniformMatrix4fv(gV, 1, GL_FALSE, &(*view).m[0][0]);
+        glUniformMatrix4fv(gDepthBiasMVP, 1, GL_FALSE, &depthBiasMVP.m[0][0]);
+        glUniform3f(gLightInvDir, lightInvDir->x, lightInvDir->y, lightInvDir->z);
+
+        //vec3 lightPos = Vec3(10.0f, 10.0f, 10.0f);
+        //glUniform3f(gLightPos, lightPos.x, lightPos.y, lightPos.z);
+
+        // NOTE: Bind the texture
+        if(mesh->material->diffuseTex)
+        {
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, mesh->material->diffuseTex);
+            glUniform1i(gSampler, 0);
+        }
+
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, gDepthTexture);
+        glUniform1i(gShadowSampler, 1);
+    }
+
+    // NOTE: Vertices
+    glEnableVertexAttribArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, mesh->vbuf);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+
+    if(!depthPass)
+    {
+        // NOTE: UVs
+        glEnableVertexAttribArray(1);
+        glBindBuffer(GL_ARRAY_BUFFER, mesh->uvbuf);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, 0);
+
+        // NOTE: Normals
+        glEnableVertexAttribArray(2);
+        glBindBuffer(GL_ARRAY_BUFFER, mesh->nbuf);
+        glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    }
+
+    // NOTE: Indices
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh->ibuf);
+
+    glDrawElements(GL_TRIANGLES, mesh->numIndices, GL_UNSIGNED_SHORT, 0);
+
+    glDisableVertexAttribArray(0);
+    if(!depthPass)
+    {
+        glDisableVertexAttribArray(1);
+        glDisableVertexAttribArray(2);
+    }
+}
+
+static void RenderOpenGL(HWND *window, HDC *deviceContext, u32 x, u32 y, u32 width, u32 height)
+{
+    // NOTE: Render into framebuffer
+    glViewport(0, 0, 1024, 1024);
+    glBindFramebuffer(GL_FRAMEBUFFER, gFramebuffer);
+
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+
+    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+    glClear(GL_DEPTH_BUFFER_BIT);
+
+    glUseProgram(gRTTShaderProgram);
+
+    vec3 lightInvDir = Vec3(2.0f, 4.0f, 2.0f);
+
+    // NOTE: MVP from light's POV
+    mat4 depthProj = Orthographic(-10, 10, -10, 10, -10, 20);
+    mat4 depthView = LookAt(lightInvDir, Vec3(0, 0, 0), Vec3(0, 1, 0));
+
+    // NOTE: Spotlight
+    //vec3 lightPos = Vec3(5, 20, 20);
+    //mat4 depthProj = Perspective(PI / 2.0f, 1.0f, 2.0f, 50.0f);
+    //mat4 depthView = LookAt(lightInvDir, Vec3(0, 0, 0), Vec3(0, 1, 0));
+
+    mat4 depthModel = MAT4_IDENTITY;
+    mat4 depthMVP = depthProj * depthView * depthModel;
+    glUniformMatrix4fv(gRTTMVP, 1, GL_FALSE, &depthMVP.m[0][0]);
+
+    
+    for(u32 i = 0; i < ArrayCount(gMeshes); ++i)
+    {
+        RenderMesh(gMeshes[i], &depthView, &depthProj, Vec3(0.0f, -1.0f + 1.0f * i, 0.0f), &depthMVP, &lightInvDir, true);
+    }
+    
+    /*
+    for(u32 i = 0; i < ArrayCount(gMeshes); ++i)
+    {
+        glEnableVertexAttribArray(0);
+        glBindBuffer(GL_ARRAY_BUFFER, gMeshes[i]->vbuf);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gMeshes[i]->ibuf);
+        glDrawElements(GL_TRIANGLES, gMeshes[i]->numIndices, GL_UNSIGNED_SHORT, 0);
+        glDisableVertexAttribArray(0);
+    }
+    */
+
+    // NOTE: Render to screen
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, width, height);
+
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    glUseProgram(gShaderProgram);
+
+    local_persist r32 scale = 0.0f;
+
+    POINT p;
+    GetCursorPos(&p);
+    ScreenToClient(*window, &p);
+
+    vec2 nCursorPos = Vec2((r32)p.x / (r32)width, (r32)p.y / (r32)height);
+
+    // NOTE: Camera
+    //mat4 projection = Perspective(PI / 6.0f + nCursorPos.y  * PI / 3.0f, (r32)width/(r32)height, 0.1f, 100.0f);
+    mat4 projection = Perspective(60.0f + nCursorPos.y * 60.0f, (r32)width/(r32)height, 0.1f, 100.0f);
+    //mat4 view = LookAt(Vec3(6.0f, 4.0f, 6.0f),
+    mat4 view = LookAt(Vec3(cosf(nCursorPos.x * TWOPI) * 6.0f, 4.0f, sinf(nCursorPos.x * TWOPI) * 6.0f),
+                       Vec3(0, 0, 0),
+                       Vec3(0, 1, 0));
+
+    for(u32 i = 0; i < ArrayCount(gMeshes); ++i)
+    {
+        RenderMesh(gMeshes[i], &view, &projection, VEC3_ZERO /*vec3(0.0f, -1.0f + 1.0f * i, 0.0f)*/, &depthMVP, &lightInvDir, false);
+    }
+
+    // NOTE: Render depth texture to quad (testing)
+    glViewport(0, 0, 256, 256);
+    glUseProgram(gPreviewProgram);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, gDepthTexture);
+    glUniform1i(gPreviewSampler, 0);
+
+    glEnableVertexAttribArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, gQuadBuf);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+
+    glDisableVertexAttribArray(0);
+
+    SwapBuffers(*deviceContext);
+
+    scale += 0.01f;
 }
 
 int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
@@ -302,13 +646,16 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
     if(RegisterClass(&wc))
     {
+        u32 windowWidth = 1280;
+        u32 windowHeight = 720;
+
         HWND windowHandle =
             CreateWindowEx(
                 0, 
                 wc.lpszClassName,
-                "AAEngine",
+                "SOFT351 Demo",
                 WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-                0, 0, 1280, 720,
+                0, 0, windowWidth, windowHeight,
                 0,
                 0,
                 hInstance,
@@ -318,9 +665,8 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
             HDC deviceContext;
             HGLRC renderContext;
 
-            EnableOpenGL(windowHandle, &deviceContext, &renderContext);
-
-            ReadEntireFile("shader.vs");
+            // NOTE: OpenGL init
+            InitializeOpenGL(windowHandle, &deviceContext, &renderContext, windowWidth, windowHeight);
 
             // NOTE: Main loop
             GlobalRunning = true;
@@ -336,6 +682,8 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
             while(GlobalRunning)
             {
+                // NOTE: set newInput->deltaTime
+
                 game_controller_input *oldKeyboardController = &oldInput->controllers[0];
                 game_controller_input *newKeyboardController = &newInput->controllers[0];
                 *newKeyboardController = {};
@@ -446,24 +794,13 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
                 GameUpdate(newInput);
 
-                glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
-                glClear(GL_COLOR_BUFFER_BIT);
+                //
+                // NOTE: Rendering
+                //
 
-                local_persist r32 angle = 0.0f;
-                
-                glPushMatrix();
-                glRotatef(angle, 0.0f, 0.0f, 1.0f);
-                glBegin(GL_TRIANGLES);
-                glColor3f(1.0f, 0.0f, 0.0f); glVertex2f(0.0f, 1.0f);
-                glColor3f(0.0f, 1.0f, 0.0f); glVertex2f(0.87f, -0.5f);
-                glColor3f(0.0f, 0.0f, 1.0f); glVertex2f(-0.87f, -0.5f);
-                glEnd();
-                glPopMatrix();
+                RenderOpenGL(&windowHandle, &deviceContext, 0, 0, windowWidth, windowHeight);
 
-                SwapBuffers(deviceContext);
-
-                angle += 1.0f;
-                
+                // NOTE: Swap game input
                 Swap(newInput, oldInput);
 
                 // NOTE: Timing
@@ -486,7 +823,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
                 lastCounter = endCounter;
             }
 
-            DisableOpenGL(windowHandle, deviceContext, renderContext);
+            TerminateOpenGL(windowHandle, deviceContext, renderContext);
         }
         else
         {
