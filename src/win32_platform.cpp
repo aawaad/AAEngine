@@ -1,17 +1,15 @@
-/*
- * TODO:
- *
- *  Threading
- *  ClipCursor (multimonitor)
- *  Sleep/frame limiting
- *  Fullscreen
- *  Raw input
- *  GetKeyboardLayout (handle international keyboards, AZERTY etc)
- *  handle WM_ACTIVATEAPP
- *
-*/
+#include <stdint.h>
 
-#include "AAMath\aatypes.h"
+typedef int8_t s8;
+typedef uint8_t u8;
+typedef int16_t s16;
+typedef uint16_t u16;
+typedef int32_t s32;
+typedef uint32_t u32;
+typedef int64_t s64;
+typedef uint64_t u64;
+typedef float r32;
+typedef int32_t b32;
 
 #define internal static
 #define local_persist static
@@ -218,6 +216,46 @@ internal void ProcessWindowsMessages(game_controller_input *keyboardController)
     }
 }
 
+internal void FreeFile(void *file)
+{
+    if(file)
+    {
+        VirtualFree(file, 0, MEM_RELEASE);
+    }
+}
+
+internal void *ReadEntireFile(char *filename)
+{
+    void *result = 0;
+
+    HANDLE file = CreateFile(filename, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
+    if(file != INVALID_HANDLE_VALUE)
+    {
+        LARGE_INTEGER size;
+        if(GetFileSizeEx(file, &size))
+        {
+            Assert(size.QuadPart <= 0xFFFFFFFF);
+            result = VirtualAlloc(0, size.QuadPart, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
+            if(result)
+            {
+                DWORD bytesRead;
+                if(ReadFile(file, &result, size.LowPart, &bytesRead, 0) && (size.LowPart == bytesRead))
+                {
+                }
+                else
+                {
+                    FreeFile(file);
+                    result = 0;
+                }
+            }
+        }
+
+        CloseHandle(file);
+    }
+
+    return result;
+}
+
 internal void EnableOpenGL(HWND hWnd, HDC *hDC, HGLRC *hRC)
 {
     *hDC = GetDC(hWnd);
@@ -281,6 +319,8 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
             HGLRC renderContext;
 
             EnableOpenGL(windowHandle, &deviceContext, &renderContext);
+
+            ReadEntireFile("shader.vs");
 
             // NOTE: Main loop
             GlobalRunning = true;
