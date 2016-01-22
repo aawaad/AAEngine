@@ -42,11 +42,11 @@ float random(vec3 seed, int i)
 void main()
 {
     vec3 lightCol = vec3(1.0, 1.0, .925);
-    float lightPow = 2.0;
+    float lightPow = 0.8;
 
     vec3 matDifCol = texture(sampler, uv).rgb;
-    vec3 matAmbCol = vec3(0.15, 0.175, 0.2) * matDifCol;
-    vec3 matSpcCol = vec3(0.8, 0.8, 0.8);
+    vec3 matAmbCol = vec3(0.05, 0.075, 0.1) * matDifCol;
+    vec3 matSpcCol = vec3(0.4, 0.4, 0.4);
 
     vec3 n = normalize(norm);
     vec3 l = normalize(lightDir);
@@ -62,12 +62,12 @@ void main()
     // Sample the shadow map
     for(int i = 0; i < 4; ++i)
     {
-        //int idx = i;
+        int idx = i;
         // Random sample based upon pixel screen pos
-        // int idx = int(16.0 * random(gl_FragCoord.xyy, i)) % 16;
+        //int idx = int(16.0 * random(gl_FragCoord.xyy, i)) % 16;
         // Random sample based upon pixel world pos
-        int idx = int(16.0 * random(floor(pos.xyz * 1000.0), i)) % 16;
-        vis -= 0.2 * (1.0 - texture(shadowSampler, vec3(shadowCoord.xy + poissonDisk[idx] / 700.0, (shadowCoord.z - bias) / shadowCoord.w)));
+        //int idx = int(16.0 * random(floor(pos.xyz * 1000.0), i)) % 16;
+        vis -= 0.2 * (1.0 - texture(shadowSampler, vec3(shadowCoord.xy + poissonDisk[idx] / 600.0, (shadowCoord.z - bias) / shadowCoord.w)));
     }
 
     colour = matAmbCol + vis * matDifCol * lightCol * lightPow * cosTheta

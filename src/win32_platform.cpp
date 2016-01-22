@@ -331,16 +331,16 @@ static b32 InitializeRenderToTexture(u32 width, u32 height)
     // NOTE: Depth texture
     glGenRenderbuffers(1, &gDepthTexture);
     glBindTexture(GL_TEXTURE_2D, gDepthTexture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
-    //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_R_TO_TEXTURE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_R_TO_TEXTURE);
     // NOTE: width, height power of 2?
     glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, width, height, 0, GL_DEPTH_COMPONENT, GL_FLOAT, 0);
 
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, gDepthTexture, 0);
+    glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, gDepthTexture, 0);
     glDrawBuffer(GL_NONE);
     glReadBuffer(GL_NONE);
 
@@ -461,14 +461,18 @@ static void InitializeOpenGL(HWND hWnd, HDC *hDC, HGLRC *hRC, u32 windowWidth, u
     gMeshes[1] = LoadMesh(L"../data/pig.obj", true);
 }
 
-static void RenderMesh(simple_mesh *mesh, mat4 *view, mat4 *projection, vec3 pos,
+static void RenderMesh(simple_mesh *mesh, mat4 *model, mat4 *view, mat4 *projection,
                        mat4 *depthMVP, vec3 *lightInvDir, b32 depthPass = false)
 {
-    if(!depthPass)
+    if(depthPass)
+    {
+        mat4 depthMVP = *projection * *view * *model;
+        glUniformMatrix4fv(gRTTMVP, 1, GL_FALSE, &depthMVP.m[0][0]);
+    }
+    else
     {
         // NOTE: MVP
-        mat4 model = Mat4Translation(pos);
-        mat4 mvp = *projection * *view * model;
+        mat4 mvp = *projection * *view * *model;
 
         local_persist mat4 biasMatrix = {
             0.5f, 0.0f, 0.0f, 0.0f,
@@ -476,11 +480,12 @@ static void RenderMesh(simple_mesh *mesh, mat4 *view, mat4 *projection, vec3 pos
             0.0f, 0.0f, 0.5f, 0.0f,
             0.5f, 0.5f, 0.5f, 1.0f
         };
+        *depthMVP *= *model;
         mat4 depthBiasMVP = biasMatrix * *depthMVP;
 
         glUniformMatrix4fv(gMVP, 1, GL_FALSE, &mvp.m[0][0]);
-        glUniformMatrix4fv(gM, 1, GL_FALSE, &model.m[0][0]);
-        glUniformMatrix4fv(gV, 1, GL_FALSE, &(*view).m[0][0]);
+        glUniformMatrix4fv(gM, 1, GL_FALSE, &model->m[0][0]);
+        glUniformMatrix4fv(gV, 1, GL_FALSE, &view->m[0][0]);
         glUniformMatrix4fv(gDepthBiasMVP, 1, GL_FALSE, &depthBiasMVP.m[0][0]);
         glUniform3f(gLightInvDir, lightInvDir->x, lightInvDir->y, lightInvDir->z);
 
@@ -541,7 +546,7 @@ static void RenderOpenGL(HWND *window, HDC *deviceContext, u32 x, u32 y, u32 wid
     glCullFace(GL_BACK);
 
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
-    glClear(GL_DEPTH_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     glUseProgram(gRTTShaderProgram);
 
@@ -550,64 +555,72 @@ static void RenderOpenGL(HWND *window, HDC *deviceContext, u32 x, u32 y, u32 wid
     // NOTE: MVP from light's POV
     mat4 depthProj = Orthographic(-10, 10, -10, 10, -10, 20);
     mat4 depthView = LookAt(lightInvDir, Vec3(0, 0, 0), Vec3(0, 1, 0));
+    mat4 depthMVP = depthProj * depthView;
 
     // NOTE: Spotlight
     //vec3 lightPos = Vec3(5, 20, 20);
     //mat4 depthProj = Perspective(PI / 2.0f, 1.0f, 2.0f, 50.0f);
     //mat4 depthView = LookAt(lightInvDir, Vec3(0, 0, 0), Vec3(0, 1, 0));
 
-    mat4 depthModel = MAT4_IDENTITY;
-    mat4 depthMVP = depthProj * depthView * depthModel;
-    glUniformMatrix4fv(gRTTMVP, 1, GL_FALSE, &depthMVP.m[0][0]);
-
-    
+    /*    
     for(u32 i = 0; i < ArrayCount(gMeshes); ++i)
     {
         RenderMesh(gMeshes[i], &depthView, &depthProj, Vec3(0.0f, -1.0f + 1.0f * i, 0.0f), &depthMVP, &lightInvDir, true);
     }
-    
-    /*
-    for(u32 i = 0; i < ArrayCount(gMeshes); ++i)
-    {
-        glEnableVertexAttribArray(0);
-        glBindBuffer(GL_ARRAY_BUFFER, gMeshes[i]->vbuf);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gMeshes[i]->ibuf);
-        glDrawElements(GL_TRIANGLES, gMeshes[i]->numIndices, GL_UNSIGNED_SHORT, 0);
-        glDisableVertexAttribArray(0);
-    }
     */
+
+    mat4 wallsModel = Mat4RotationY(-PIOVERTWO);
+    wallsModel = MAT4_IDENTITY;
+    RenderMesh(gMeshes[0], &wallsModel, &depthView, &depthProj, &depthMVP, &lightInvDir, true);
+
+    local_persist r32 angle = 0.0f;
+    mat4 pigSca = Mat4Scaling(1.0f + sinf(4.0f * angle) * 0.25f);
+    mat4 pigRot = Mat4RotationY(angle);
+    mat4 pigTrs = Mat4Translation(4.0f, 0, 0);
+    mat4 pigModel = pigRot * pigTrs * pigSca;
+
+    angle+= 0.025f;
+
+    RenderMesh(gMeshes[1], &pigModel, &depthView, &depthProj, &depthMVP, &lightInvDir, true);
 
     // NOTE: Render to screen
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, width, height);
+    glCullFace(GL_BACK);
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     glUseProgram(gShaderProgram);
-
-    local_persist r32 scale = 0.0f;
 
     POINT p;
     GetCursorPos(&p);
     ScreenToClient(*window, &p);
 
     vec2 nCursorPos = Vec2((r32)p.x / (r32)width, (r32)p.y / (r32)height);
+    vec2 ndcCursorPos = nCursorPos * 2.0f - 1.0f;
 
     // NOTE: Camera
     //mat4 projection = Perspective(PI / 6.0f + nCursorPos.y  * PI / 3.0f, (r32)width/(r32)height, 0.1f, 100.0f);
-    mat4 projection = Perspective(60.0f + nCursorPos.y * 60.0f, (r32)width/(r32)height, 0.1f, 100.0f);
-    //mat4 view = LookAt(Vec3(6.0f, 4.0f, 6.0f),
-    mat4 view = LookAt(Vec3(cosf(nCursorPos.x * TWOPI) * 6.0f, 4.0f, sinf(nCursorPos.x * TWOPI) * 6.0f),
-                       Vec3(0, 0, 0),
+    mat4 projection = Perspective(30.0f + nCursorPos.y * 60.0f, (r32)width/(r32)height, 0.1f, 100.0f);
+    //mat4 view = LookAt(Vec3(6.0f, 4.0f, -6.0f),
+    r32 limit = 3.0f * PIOVERFOUR;
+    r32 offset = -PIOVERTWO;
+    mat4 view = LookAt(Vec3(cosf(Clamp(ndcCursorPos.x * limit, -limit, limit) + offset) * -6.0f, 4.0f,
+                            sinf(Clamp(ndcCursorPos.x * limit, -limit, limit) + offset) * 6.0f),
+                       Vec3(0, 1, 0),
                        Vec3(0, 1, 0));
 
+    /*
     for(u32 i = 0; i < ArrayCount(gMeshes); ++i)
     {
-        RenderMesh(gMeshes[i], &view, &projection, VEC3_ZERO /*vec3(0.0f, -1.0f + 1.0f * i, 0.0f)*/, &depthMVP, &lightInvDir, false);
+        RenderMesh(gMeshes[i], &view, &projection, Vec3(0, 0, 0) , &depthMVP, &lightInvDir, false);
     }
+    */
+    RenderMesh(gMeshes[0], &wallsModel, &view, &projection, &depthMVP, &lightInvDir, false);
+    RenderMesh(gMeshes[1], &pigModel, &view, &projection, &depthMVP, &lightInvDir, false);
 
     // NOTE: Render depth texture to quad (testing)
+    //       Need to disable GL_COMPARE_R_TO_TEXTURE
     glViewport(0, 0, 256, 256);
     glUseProgram(gPreviewProgram);
 
@@ -619,13 +632,11 @@ static void RenderOpenGL(HWND *window, HDC *deviceContext, u32 x, u32 y, u32 wid
     glBindBuffer(GL_ARRAY_BUFFER, gQuadBuf);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
 
-    glDrawArrays(GL_TRIANGLES, 0, 6);
+    //glDrawArrays(GL_TRIANGLES, 0, 6);
 
     glDisableVertexAttribArray(0);
 
     SwapBuffers(*deviceContext);
-
-    scale += 0.01f;
 }
 
 int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
@@ -676,13 +687,18 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
             u64 lastCycleCount = __rdtsc();
 
+            // TODO: Get VREFRESH / refresh rate
+            r32 targetMSPerFrame = 1000.0f / 60.0f;
+            r32 msPerFrame = targetMSPerFrame;
+
             game_input input[2] = {};
             game_input *newInput = &input[0];
             game_input *oldInput = &input[1];
 
             while(GlobalRunning)
             {
-                // NOTE: set newInput->deltaTime
+                // NOTE: deltaTime in seconds
+                newInput->deltaTime = msPerFrame / 1000.0f;
 
                 game_controller_input *oldKeyboardController = &oldInput->controllers[0];
                 game_controller_input *newKeyboardController = &newInput->controllers[0];
@@ -811,7 +827,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
                 u64 cyclesElapsed = endCycleCount - lastCycleCount;
                 s64 elapsedTime = endCounter.QuadPart - lastCounter.QuadPart;
-                r32 msPerFrame = (1000.0f * (r32)elapsedTime) / (r32)perfFrequency;
+                msPerFrame = (1000.0f * (r32)elapsedTime) / (r32)perfFrequency;
                 r32 fps = (r32)perfFrequency / (r32)elapsedTime;
                 r32 mcpf = cyclesElapsed / 1000000.0f;
 
