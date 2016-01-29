@@ -466,8 +466,8 @@ static void RenderMesh(simple_mesh *mesh, mat4 *model, mat4 *view, mat4 *project
 {
     if(depthPass)
     {
-        mat4 depthMVP = *projection * *view * *model;
-        glUniformMatrix4fv(gRTTMVP, 1, GL_FALSE, &depthMVP.m[0][0]);
+        mat4 depth = *projection * *view * *model;
+        glUniformMatrix4fv(gRTTMVP, 1, GL_FALSE, &depth.m[0][0]);
     }
     else
     {
@@ -621,6 +621,7 @@ static void RenderOpenGL(HWND *window, HDC *deviceContext, u32 x, u32 y, u32 wid
 
     // NOTE: Render depth texture to quad (testing)
     //       Need to disable GL_COMPARE_R_TO_TEXTURE
+#if 0
     glViewport(0, 0, 256, 256);
     glUseProgram(gPreviewProgram);
 
@@ -632,9 +633,10 @@ static void RenderOpenGL(HWND *window, HDC *deviceContext, u32 x, u32 y, u32 wid
     glBindBuffer(GL_ARRAY_BUFFER, gQuadBuf);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
 
-    //glDrawArrays(GL_TRIANGLES, 0, 6);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
 
     glDisableVertexAttribArray(0);
+#endif
 
     SwapBuffers(*deviceContext);
 }
