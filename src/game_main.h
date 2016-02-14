@@ -12,6 +12,11 @@
 #define ArrayCount(arr) (sizeof(arr) / sizeof((arr)[0]))
 #define Swap(a, b) {decltype(a) tmp = (a); (a) = (b); (b) = tmp;}
 
+#define Kilobytes(n) ((n) * 1024LL)
+#define Megabytes(n) (Kilobytes(n) * 1024LL)
+#define Gigabytes(n) (Megabytes(n) * 1024LL)
+#define Terabytes(n) (Gigabytes(n) * 1024LL)
+
 struct game_button_state
 {
     s32 halfTransitionCount;
@@ -58,7 +63,20 @@ struct game_input
     game_controller_input controllers[5];
 };
 
-static void GameUpdate();
+struct game_memory
+{
+    b32 isInitialised;
+    u64 permanentMemorySize;
+    void *permanentMemory;
+    u64 transientMemorySize;
+    void *transientMemory;
+};
+
+struct game_state
+{
+};
+
+static void GameUpdate(game_memory *memory, game_input *input);
 
 #endif
 

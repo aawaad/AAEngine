@@ -24,7 +24,6 @@ struct simple_material
 	WCHAR name[MAX_PATH];
 	lighting_values values;
 	WCHAR textureName[MAX_PATH];
-	//ID3D11ShaderResourceView *textureView;
 	GLuint diffuseTex;
 };
 
@@ -40,9 +39,7 @@ struct simple_mesh
 	simple_material *material;
 	u16 numMaterials;
 
-	//ID3D11Buffer *vbuf, *ibuf, *pbuf;
 	GLuint vbuf, ibuf, uvbuf, nbuf;
-	//u32 stride, offset;
 };
 
 static void FreeFile(void *file)
@@ -449,9 +446,6 @@ static simple_mesh *LoadMesh(WCHAR *filename, b32 flipUV = false)
     glGenBuffers(1, &result->ibuf);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, result->ibuf);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, result->numIndices * sizeof(u16), result->indices, GL_STATIC_DRAW);
-
-	//result->stride = sizeof(vertex);
-	//result->offset = 0;
 
 	return result;
 }
