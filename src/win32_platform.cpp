@@ -22,15 +22,48 @@ typedef float r32;
 typedef int32_t b32;
 */
 
+typedef size_t memsize;
+
 #define global_variable static
 #define local_persist static
 
 // NOTE: Unity build (single compilation unit)!
-#include "game_main.cpp"
-#include "objloader.cpp"
-#include "renderer_opengl.cpp"
+#include "game.cpp"
 
 global_variable b32 GlobalRunning;
+global_variable WINDOWPLACEMENT GlobalWindowPosition = {sizeof(GlobalWindowPosition)};
+global_variable RECT GlobalWindowRect;
+
+static void ToggleFullscreen(HWND window)
+{
+    // NOTE: See https://blogs.msdn.microsoft.com/oldnewthing/20100412-00/?p=14353
+    DWORD style = GetWindowLong(window, GWL_STYLE);
+    if(style & WS_OVERLAPPEDWINDOW)
+    {
+        MONITORINFO mi = {sizeof(mi)};
+    
+        if(GetWindowPlacement(window, &GlobalWindowPosition) &&
+                GetMonitorInfo(MonitorFromWindow(window,
+                        MONITOR_DEFAULTTOPRIMARY), &mi))
+        {
+            SetWindowLong(window, GWL_STYLE, style & ~WS_OVERLAPPEDWINDOW);
+            SetWindowPos(window, HWND_TOP,
+                    mi.rcMonitor.left, mi.rcMonitor.top,
+                    mi.rcMonitor.right - mi.rcMonitor.left,
+                    mi.rcMonitor.bottom - mi.rcMonitor.top,
+                    SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+        }
+    }
+    else
+    {
+        SetWindowLong(window, GWL_STYLE, style | WS_OVERLAPPEDWINDOW);
+        SetWindowPlacement(window, &GlobalWindowPosition);
+        SetWindowPos(window, NULL, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+                SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+    }
+    GetWindowRect(window, &GlobalWindowRect);
+}
 
 LRESULT CALLBACK MainWindowCallback(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -40,6 +73,7 @@ LRESULT CALLBACK MainWindowCallback(HWND hWnd, UINT message, WPARAM wParam, LPAR
     {
         case WM_SIZE:
         {
+            GetWindowRect(hWnd, &GlobalWindowRect);
             OutputDebugStringA("WM_SIZE\n");
         } break;
         case WM_DESTROY:
@@ -135,12 +169,14 @@ static vec2 ProcessXInputStick(SHORT x, SHORT y, SHORT deadzone)
 
 static void ProcessKeyboardKey(game_button_state *newState, b32 isDown)
 {
-    Assert(newState->endedDown != isDown);
-    newState->endedDown = isDown;
-    ++newState->halfTransitionCount;
+    if(newState->endedDown != isDown)
+    {
+        newState->endedDown = isDown;
+        ++newState->halfTransitionCount;
+    }
 }
 
-static void ProcessWindowsMessages(game_controller_input *keyboardController)
+static void ProcessWindowsMessages(HWND window, game_controller *keyboardController)
 {
     MSG message;
     while(PeekMessage(&message, 0, 0, 0, PM_REMOVE))
@@ -211,6 +247,17 @@ static void ProcessWindowsMessages(game_controller_input *keyboardController)
                                 GlobalRunning = false;
                             }
                         } break;
+                        case VK_RETURN:
+                        {
+                            if(isDown && altIsDown)
+                            {
+                                ToggleFullscreen(window);
+                            }
+                            else
+                            {
+                                ProcessKeyboardKey(&keyboardController->start, isDown);
+                            }
+                        } break;
                     }
                 }
             } break;
@@ -220,6 +267,21 @@ static void ProcessWindowsMessages(game_controller_input *keyboardController)
                 DispatchMessage(&message);
             } break;
         }
+    }
+}
+
+PLATFORM_ALLOCATE_MEMORY(AllocateMemory)
+{
+    void *result = VirtualAlloc(0, size, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
+
+    return(result);
+}
+
+PLATFORM_DEALLOCATE_MEMORY(DeallocateMemory)
+{
+    if(memory)
+    {
+        VirtualFree(memory, 0, MEM_RELEASE);
     }
 }
 
@@ -248,7 +310,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
             CreateWindowEx(
                 0, 
                 wc.lpszClassName,
-                "SOFT351 Demo",
+                "AAEngine",
                 WS_OVERLAPPEDWINDOW | WS_VISIBLE,
                 0, 0, windowWidth, windowHeight,
                 0,
@@ -260,11 +322,16 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
             HDC deviceContext;
             HGLRC renderContext;
 
+            GetWindowRect(windowHandle, &GlobalWindowRect);
             // NOTE: OpenGL init
             InitializeOpenGL(windowHandle, &deviceContext, &renderContext, windowWidth, windowHeight);
 
             // NOTE: Main loop
             GlobalRunning = true;
+
+            // TODO: Decide render buffer size
+            memsize pushBufferSize = Megabytes(16);
+            void *pushBuffer = AllocateMemory(pushBufferSize);
 
 #if AAENGINE_INTERNAL
             LPVOID baseAddr = (LPVOID)Terabytes((u64)2);
@@ -301,24 +368,50 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
                     // NOTE: deltaTime in seconds
                     newInput->deltaTime = msPerFrame / 1000.0f;
 
-                    game_controller_input *oldKeyboardController = &oldInput->controllers[0];
-                    game_controller_input *newKeyboardController = &newInput->controllers[0];
+                    POINT mousePos;
+                    GetCursorPos(&mousePos);
+                    ScreenToClient(windowHandle, &mousePos);
+                    newInput->mouse.x = (r32)mousePos.x / windowWidth;
+                    newInput->mouse.y = (r32)mousePos.y / windowHeight;
+
+                    // TODO: Mousewheel support
+
+                    DWORD mouseButtonID[mouse_button_count] =
+                    {
+                        VK_LBUTTON,
+                        VK_MBUTTON,
+                        VK_RBUTTON,
+                        VK_XBUTTON1,
+                        VK_XBUTTON2,
+                    };
+
+                    for(u32 btnIdx = 0; btnIdx < mouse_button_count; ++btnIdx)
+                    {
+                        newInput->mouse.buttons[btnIdx] = oldInput->mouse.buttons[btnIdx];
+                        newInput->mouse.buttons[btnIdx].halfTransitionCount = 0;
+                        ProcessKeyboardKey(&newInput->mouse.buttons[btnIdx],
+                                           GetKeyState(mouseButtonID[btnIdx]) & (1 << 15));
+                    }
+
+                    game_controller *oldKeyboardController = GetController(oldInput, 0);
+                    game_controller *newKeyboardController = GetController(newInput, 0);
                     *newKeyboardController = {};
+                    newKeyboardController->isConnected = true;
 
                     for(s32 btnIdx = 0; btnIdx < ArrayCount(newKeyboardController->buttons); ++btnIdx)
                     {
                         newKeyboardController->buttons[btnIdx] = oldKeyboardController->buttons[btnIdx];
                     }
 
-                    ProcessWindowsMessages(newKeyboardController);
+                    ProcessWindowsMessages(windowHandle, newKeyboardController);
 
                     // NOTE: Use XUSER_MAX_COUNT?
                     DWORD maxControllers = ArrayCount(newInput->controllers) - 1;
                     for(DWORD controllerIndex = 0; controllerIndex < maxControllers; ++controllerIndex)
                     {
                         // NOTE: First controller index is reserved for the keyboard
-                        game_controller_input *oldController = &oldInput->controllers[controllerIndex + 1];
-                        game_controller_input *newController = &newInput->controllers[controllerIndex + 1];
+                        game_controller *oldController = GetController(oldInput, controllerIndex + 1);
+                        game_controller *newController = GetController(newInput, controllerIndex + 1);
 
                         // TODO: Apparently there's some bug where XInputGetState delays for a relatively long time
                         // if no controllers are connected, so it may be better to listen to HID connections directly
@@ -326,6 +419,8 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
                         XINPUT_STATE controllerState;
                         if (XInputGetState(controllerIndex, &controllerState) == ERROR_SUCCESS)
                         {
+                            newController->isConnected = true;
+                            newController->isAnalog = oldController->isAnalog;
                             XINPUT_GAMEPAD *pad = &controllerState.Gamepad;
 
                             ProcessXInputButton(pad->wButtons,
@@ -375,11 +470,21 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
                             newController->leftTrigger = (r32)pad->bLeftTrigger / 255.0f;
                             newController->rightTrigger = (r32)pad->bRightTrigger / 255.0f;
 
-#define GAMEPAD_LEFT_THUMB_DEADZONE = 3277;
-#define GAMEPAD_RIGHT_THUMB_DEADZONE = 3277;
+#define GAMEPAD_LEFT_THUMB_DEADZONE 3277
+#define GAMEPAD_RIGHT_THUMB_DEADZONE 3277
 
                             newController->leftStickAvg = ProcessXInputStick(pad->sThumbLX, pad->sThumbLY, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
                             newController->rightStickAvg = ProcessXInputStick(pad->sThumbRX, pad->sThumbRY, XINPUT_GAMEPAD_RIGHT_THUMB_DEADZONE);
+
+                            if(Length(newController->leftStickAvg) > GAMEPAD_LEFT_THUMB_DEADZONE
+                                || Length(newController->rightStickAvg) > GAMEPAD_RIGHT_THUMB_DEADZONE)
+                            {
+                                newController->isAnalog = true;
+                            }
+                            else
+                            {
+                                newController->isAnalog = false;
+                            }
 
                             r32 threshold = 0.5f;
                             ProcessXInputButton(
@@ -402,6 +507,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
                         else
                         {
                             // NOTE: Controller unavailable
+                            newController->isConnected = false;
                         }
                     }
 
@@ -409,13 +515,26 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
                     // NOTE: Game-layer
                     //
 
-                    GameUpdate(&gameMemory, newInput);
+                    game_render_commands renderCommands =
+                    {
+                        (GlobalWindowRect.right - GlobalWindowRect.left),
+                        (GlobalWindowRect.bottom - GlobalWindowRect.top),
+                        MAT4_IDENTITY, MAT4_IDENTITY,
+                        Vec3(2.0f, 4.0f, 2.0f),
+                        (u32)pushBufferSize, 0, (u8 *)pushBuffer
+                    };
+
+                    GameUpdate(&gameMemory, newInput, &renderCommands);
 
                     //
                     // NOTE: Rendering
                     //
 
-                    RenderOpenGL(&windowHandle, &deviceContext, 0, 0, windowWidth, windowHeight);
+                    //RenderOpenGL(&windowHandle, &deviceContext, 0, 0, windowWidth, windowHeight);
+                    RenderOpenGL(&windowHandle, &deviceContext, 0, 0,
+                                (GlobalWindowRect.right - GlobalWindowRect.left),
+                                (GlobalWindowRect.bottom - GlobalWindowRect.top),
+                                &renderCommands);
 
                     // NOTE: Swap game input
                     Swap(newInput, oldInput);

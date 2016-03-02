@@ -1,47 +1,11 @@
+#include "asset.h"
+
 #include <fstream>
 #include <string>
 #include <vector>
 
-struct vertex
-{
-    vec3 pos;
-    vec3 normal;
-    vec2 UV;
-};
-
-struct lighting_values
-{
-    vec4 ambient, diffuse, specular;
-	r32 alpha; // 'd'
-	s32 specularExp;
-	s32 illum;
-	s32 __pad; // 16-byte alignment
-};
-
-struct simple_material
-{
-	WCHAR filename[MAX_PATH];
-	WCHAR name[MAX_PATH];
-	lighting_values values;
-	WCHAR textureName[MAX_PATH];
-	GLuint diffuseTex;
-};
-
-struct simple_mesh
-{
-	//vertex *vertices;
-    vec3 *pos;
-    vec3 *normal;
-    vec2 *uv;
-	u16 *indices;
-	u16 numVertices;
-	u16 numIndices;
-	simple_material *material;
-	u16 numMaterials;
-
-	GLuint vbuf, ibuf, uvbuf, nbuf;
-};
-
+// TODO: Remove these and replace with transient memory allocation
+//       Could keep as platform debug functions
 static void FreeFile(void *file)
 {
     if(file)
@@ -100,14 +64,7 @@ struct bitmap_header
 };
 #pragma pack(pop)
 
-struct bitmap
-{
-    u32 width;
-    u32 height;
-    u32 *data;
-};
-
-static bitmap LoadBMP(char *filename)
+static bitmap LoadBitmap(char *filename)
 {
     bitmap result = {};
     void *file = ReadEntireFile(filename);
@@ -130,12 +87,12 @@ static bitmap LoadBMP(char *filename)
 enum filter_type
 {
     filter_type_nearest,
-    filter_type_trilinear
+    filter_type_trilinear,
 };
 
 static GLuint LoadBitmapToTexture2D(char *filename, filter_type filterType = filter_type_trilinear)
 {
-    bitmap bmp = LoadBMP(filename);
+    bitmap bmp = LoadBitmap(filename);
 
     GLuint tex;
     glGenTextures(1, &tex);
@@ -309,9 +266,9 @@ static simple_mesh *LoadMesh(WCHAR *filename, b32 flipUV = false)
 
 			v.pos = vertices[indices[i]];
 			if (UVIndices[i] >= 0)
-				v.UV = UVs[UVIndices[i]];
-			//v.UV.x = 1.0f - v.UV.x;
-			//v.UV.y = 1.0f - v.UV.y;
+				v.uv = UVs[UVIndices[i]];
+			//v.uv.x = 1.0f - v.uv.x;
+			//v.uv.y = 1.0f - v.uv.y;
 			if (normalIndices[i] >= 0)
 				v.normal = normals[normalIndices[i]];
 
@@ -326,19 +283,26 @@ static simple_mesh *LoadMesh(WCHAR *filename, b32 flipUV = false)
 
 	// Fill the result vertex and index arrays from the temp arrays
 	result->numVertices = (u16)tempVertices.size();
-	//result->vertices = new vertex[result->numVertices];
+	result->vertices = new vertex[result->numVertices];
+	/*
 	result->pos = new vec3[result->numVertices];
 	result->normal = new vec3[result->numVertices];
 	result->uv = new vec2[result->numVertices];
+	*/
 	for (s32 i = 0; i < result->numVertices; ++i)
 	{
-		//result->vertices[i] = tempVertices[i];
+		result->vertices[i] = tempVertices[i];
+		/*
 		result->pos[i] = tempVertices[i].pos;
 		result->normal[i] = tempVertices[i].normal;
-		result->uv[i] = tempVertices[i].UV;
+		result->uv[i] = tempVertices[i].uv;
+		*/
 
         if(flipUV)
-    		result->uv[i].y = -result->uv[i].y;
+        {
+            result->vertices[i].uv.y = -result->vertices[i].uv.y;
+    		//result->uv[i].y = -result->uv[i].y;
+        }
 	}
 
 	result->numIndices = (u16)tempIndices.size();
@@ -427,25 +391,10 @@ static simple_mesh *LoadMesh(WCHAR *filename, b32 flipUV = false)
 			wcscat(fullpath, result->material->textureName);
 			char cpath[MAX_PATH];
 			wcstombs(cpath, fullpath, MAX_PATH);
-			result->material->diffuseTex = LoadBitmapToTexture2D(cpath, filter_type_trilinear);
+			//result->material->diffuseTex = LoadBitmapToTexture2D(cpath, filter_type_trilinear);
+			result->material->diffuseTexture = LoadBitmap(cpath);
 		}
 	}
-
-    glGenBuffers(1, &result->vbuf);
-    glBindBuffer(GL_ARRAY_BUFFER, result->vbuf);
-    glBufferData(GL_ARRAY_BUFFER, result->numVertices * sizeof(vec3), result->pos, GL_STATIC_DRAW);
-
-    glGenBuffers(1, &result->uvbuf);
-    glBindBuffer(GL_ARRAY_BUFFER, result->uvbuf);
-    glBufferData(GL_ARRAY_BUFFER, result->numVertices * sizeof(vec2), result->uv, GL_STATIC_DRAW);
-
-    glGenBuffers(1, &result->nbuf);
-    glBindBuffer(GL_ARRAY_BUFFER, result->nbuf);
-    glBufferData(GL_ARRAY_BUFFER, result->numVertices * sizeof(vec3), result->normal, GL_STATIC_DRAW);
-
-    glGenBuffers(1, &result->ibuf);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, result->ibuf);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, result->numIndices * sizeof(u16), result->indices, GL_STATIC_DRAW);
 
 	return result;
 }

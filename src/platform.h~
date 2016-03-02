@@ -1,5 +1,5 @@
-#ifndef GAME_MAIN_H
-#define GAME_MAIN_H
+#ifndef PLATFORM_H
+#define PLATFORM_H
 
 /*
 #if AAENGINE_DEBUG
@@ -25,10 +25,11 @@ struct game_button_state
 
 struct game_controller_input
 {
+    b32 isConnected;
     b32 isAnalog;
 
     vec2 leftStickAvg,
-       rightStickAvg;
+         rightStickAvg;
 
     r32 leftTrigger;
     r32 rightTrigger;
@@ -52,7 +53,9 @@ struct game_controller_input
             game_button_state actionDown;
             game_button_state actionLeft;
             game_button_state actionRight;
-            // TODO: Do something about size mismatch of this struct and the array ^
+
+            // NOTE: New buttons must be added above here
+            game_button_state btnCount;
         };
     };
 };
@@ -63,17 +66,18 @@ struct game_input
     game_controller_input controllers[5];
 };
 
+inline game_controller_input *GetController(game_input *input, u32 idx)
+{
+    Assert(idx < ArrayCount(input->controllers));
+    return &input->controllers[idx];
+}
+
 struct game_memory
 {
-    b32 isInitialised;
     u64 permanentMemorySize;
     void *permanentMemory;
     u64 transientMemorySize;
     void *transientMemory;
-};
-
-struct game_state
-{
 };
 
 static void GameUpdate(game_memory *memory, game_input *input);
