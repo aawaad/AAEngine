@@ -172,6 +172,8 @@ static simple_mesh *LoadMesh(WCHAR *filename, b32 flipUV = false)
 		wcline[line.size()] = '\0';
 		WCHAR *part = wcstok(wcline, L" ");
 
+        if(wcslen(wcline) == 0) { continue; }
+
 		if (wcscmp(part, L"v") == 0)
 		{
 			swscanf(line.c_str(), L"%s%f%f%f", first, &v1, &v2, &v3);

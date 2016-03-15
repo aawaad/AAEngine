@@ -472,6 +472,7 @@ static void RenderOpenGL(HWND *window, HDC *deviceContext, u32 x, u32 y, u32 win
                         glBindVertexArray(mesh->vaoHandle);
                     }
 
+                    // NOTE: glDeleteBuffers, also move this to asset loading/unloading
                     if(!mesh->vbufHandle)
                     {
                         glGenBuffers(1, &mesh->vbufHandle);
@@ -511,6 +512,7 @@ static void RenderOpenGL(HWND *window, HDC *deviceContext, u32 x, u32 y, u32 win
                         }
                         else
                         {
+                            // NOTE: glDeleteTextures, also handle this in asset loading/unloading
                             glGenTextures(1, &(mesh->material->diffuseTexture.handle));
                             glBindTexture(GL_TEXTURE_2D, mesh->material->diffuseTexture.handle);
                             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);

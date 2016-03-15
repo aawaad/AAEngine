@@ -9,24 +9,6 @@
 #include "../../AAMath/src/aamath.h"
 using namespace aam;
 
-/*
-typedef int8_t s8;
-typedef uint8_t u8;
-typedef int16_t s16;
-typedef uint16_t u16;
-typedef int32_t s32;
-typedef uint32_t u32;
-typedef int64_t s64;
-typedef uint64_t u64;
-typedef float r32;
-typedef int32_t b32;
-*/
-
-typedef size_t memsize;
-
-#define global_variable static
-#define local_persist static
-
 // NOTE: Unity build (single compilation unit)!
 #include "game.cpp"
 
@@ -512,7 +494,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
                     }
 
                     //
-                    // NOTE: Game-layer
+                    // NOTE: Update
                     //
 
                     game_render_commands renderCommands =
@@ -527,7 +509,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
                     GameUpdate(&gameMemory, newInput, &renderCommands);
 
                     //
-                    // NOTE: Rendering
+                    // NOTE: Render
                     //
 
                     //RenderOpenGL(&windowHandle, &deviceContext, 0, 0, windowWidth, windowHeight);
