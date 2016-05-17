@@ -1,7 +1,9 @@
 #ifndef GAME_H
 #define GAME_H
 
+#include "renderer.h"
 #include "platform.h"
+#include "allocator.h"
 #include "asset.h"
 
 /*
@@ -106,171 +108,37 @@
 
 */
 
-struct entity_player
+struct player
 {
-    vec3 position;
-    vec3 velocity;
-    mat4 orientation;
+    vec3 Position;
+    vec3 Velocity;
+    mat4 Orientation;
 
-    vec3 forward;
-    vec3 up;
-    vec3 right;
-};
-
-struct free_memory
-{
-    memsize size;
-    free_memory *next;
-};
-
-struct memory_region
-{
-    memsize size;
-    u8 *base;
-    memsize used;
-    free_memory *freeList;
+    vec3 Forward;
+    vec3 Up;
+    vec3 Right;
 };
 
 struct game_state
 {
-    b32 isInitialised;
+    b32 IsInitialised;
 
-    r32 time;
+    s64 Time;
+    r32 DeltaTime;
 
-    simple_mesh *pig;
-    simple_mesh *tiger;
-    simple_mesh *walls;
-    simple_mesh *ship;
-    simple_mesh *track;
-
-    entity_player player;
-    vec3 *cameraTarget;
+    player Player;
+    vec3 *CameraTarget;
 };
 
 struct transient_state
 {
-    b32 isInitialised;
-    memory_region transientMemory;
+    b32 IsInitialised;
+    memory_region TransientMemory;
+
+    game_assets *Assets;
 };
 
-inline void CreateRegion(memory_region *region, memsize size, u8 *base)
-{
-    Assert(size > sizeof(free_memory));
-
-    region->size = size;
-    region->base = base;
-    region->used = 0;
-    region->freeList = (free_memory *)base;
-    region->freeList->size = size;
-    region->freeList->next = nullptr;
-}
-
-#define AllocStruct(region, type) (type *)AllocSize(region, sizeof(type))
-#define AllocArray(region, count, type) (type *)AllocSize(region, (count)*sizeof(type))
-inline void *AllocSize(memory_region *region, memsize size)
-{
-    Assert(region->used + size <= region->size);
-    Assert(size > 0);
-
-    free_memory *prev = nullptr;
-    free_memory *curr = region->freeList;
-    memsize totalSize = size;
-
-    while(curr != nullptr)
-    {
-        // NOTE: If current region's size is too small, save current to prev and continue to next
-        if(curr->size < size)
-        {
-            prev = curr;
-            curr = curr->next;
-            continue;
-        }
-
-        // NOTE: If there isn't enough space left for a new free region then consume the entire region
-        //       else allocate, then create a new free region and add it to the list
-        if(curr->size - size < sizeof(free_memory))
-        {
-            totalSize = curr->size;
-
-            if(prev != nullptr) { prev->next = curr->next; }
-            else { region->freeList = curr->next; }
-        }
-        else
-        {
-            free_memory *free = (free_memory *)(curr + size);
-            free->size = curr->size - size;
-            free->next = curr->next;
-
-            if(prev != nullptr) { prev->next = free; }
-            else { region->freeList = free; }
-        }
-
-        region->used += totalSize;
-        return (void *)curr;
-    }
-
-    Assert(!"Region out of memory!");
-
-    return nullptr;
-}
-
-inline void DeallocSize(memory_region *region, void *base, memsize size)
-{
-    Assert(base != nullptr);
-
-    free_memory *prev = nullptr;
-    free_memory *curr = region->freeList;
-
-    while(curr != nullptr)
-    {
-        // NOTE: Check if the current free region address is past the region to the deallocated
-        if((uptr)curr >= ((uptr)base + size)) { break; }
-
-        prev = curr;
-        curr = curr->next;
-    }
-
-    // NOTE: If no previous, current is past the given base address, so free and add to freelist
-    //       else if previous is adjacent to the given base, just increase previous' size to overlap
-    //       else create a new free region and place it inbetween prev and prev's next
-    if(prev == nullptr)
-    {
-        prev = (free_memory *)base;
-        prev->size = size;
-        prev->next = region->freeList;
-        region->freeList = prev;
-    }
-    else if(((uptr)prev + prev->size) == (uptr)base)
-    {
-        prev->size += size;
-    }
-    else
-    {
-        free_memory *free = (free_memory *)base;
-        free->size = size;
-        free->next = prev->next;
-        prev->next = free;
-        prev = free; // NOTE: This is so that the check below updates the correct node!
-    }
-
-    // NOTE: If current isn't null and it's adjacent to the given base, grow prev and update link
-    if((curr != nullptr) && ((uptr)curr == ((uptr)base + size)))
-    {
-        prev->size += curr->size;
-        prev->next = curr->next;
-    }
-    
-    region->used -= size;
-}
-
-inline void ZeroSize(memsize size, void *base)
-{
-    u8 *byte = (u8 *)base;
-    while(size--)
-    {
-        *byte++ = 0;
-    }
-}
+global_variable platform_api Platform;
 
 #endif
 

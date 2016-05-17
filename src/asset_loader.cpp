@@ -4,256 +4,211 @@
 #include <string>
 #include <vector>
 
-// TODO: Remove these and replace with transient memory allocation
-//       Could keep as platform debug functions
-static void FreeFile(void *file)
-{
-    if(file)
-    {
-        //VirtualFree(file, 0, MEM_RELEASE);
-        free(file);
-    }
-}
-
-static void *ReadEntireFile(char *filename)
-{
-    void *result = 0;
-
-    HANDLE file = CreateFile(filename, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
-    if(file != INVALID_HANDLE_VALUE)
-    {
-        LARGE_INTEGER size;
-        if(GetFileSizeEx(file, &size))
-        {
-            Assert(size.QuadPart <= 0xFFFFFFFF);
-            //result = VirtualAlloc(0, size.LowPart, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
-            result = malloc(size.LowPart);
-            if(result)
-            {
-                DWORD bytesRead;
-                if(ReadFile(file, result, size.LowPart, &bytesRead, 0) && (size.LowPart == bytesRead))
-                {
-                }
-                else
-                {
-                    FreeFile(file);
-                    result = 0;
-                }
-            }
-        }
-
-        CloseHandle(file);
-    }
-
-    return result;
-}
-
 #pragma pack(push, 1)
 struct bitmap_header
 {
-    u16 fileType;
-    u32 fileSize;
-    u16 reserved1;
-    u16 reserved2;
-    u32 bitmapOffset;
-    u32 size;
-    s32 width;
-    s32 height;
-    u16 planes;
-    u16 bitsPerPixel;
+    u16 FileType;
+    u32 FileSize;
+    u16 Reserved1;
+    u16 Reserved2;
+    u32 BitmapOffset;
+    u32 Size;
+    s32 Width;
+    s32 Height;
+    u16 Planes;
+    u16 BitsPerPixel;
 };
 #pragma pack(pop)
 
-static bitmap LoadBitmap(char *filename)
+s32 CountTokens(const WCHAR *Str, WCHAR Tok)
 {
-    bitmap result = {};
-    void *file = ReadEntireFile(filename);
+	s32 Result = 0;
 
-    if(file)
+	while (*Str++ != L'\0')
+		if (*Str == Tok) Result++;
+
+	return Result;
+}
+
+static texture *LoadTextureFromBMP(memory_region *Region, WCHAR *Filename,
+                                  texture_type Type = TextureType_2D,
+                                  texture_filter_type MinFilter = TextureFilterType_Nearest,
+                                  texture_filter_type MagFilter = TextureFilterType_Nearest,
+                                  texture_addr_mode WrapU = TextureMode_Wrap,
+                                  texture_addr_mode WrapV = TextureMode_Wrap,
+                                  b32 Lock = false)
+{
+    texture *Result = nullptr;
+
+    WCHAR Fullpath[MAX_PATH];
+    Platform.FullPathFromRelativeWchar(Fullpath, Filename, MAX_PATH);
+
+    void *File = Platform.ReadEntireFile(Fullpath);
+
+    if(File)
     {
-        bitmap_header *header = (bitmap_header *)file;
+        bitmap_header *Header = (bitmap_header *)File;
 
-        if((header->fileSize > 54) && (*(u8 *)file == 'B') && (*((u8 *)file + 1) == 'M'))
+        if((Header->FileSize >= 54) && (*(u8 *)File == 'B') && (*((u8 *)File + 1) == 'M'))
         {
-            result.data = (u32 *)((u8 *)file + header->bitmapOffset);
-            result.width = header->width;
-            result.height = header->height;
+            Result = AllocStruct(Region, texture);
+            Result->Meta.Filename = (WCHAR *)AllocSize(Region, sizeof(WCHAR) * wcslen(Fullpath));
+            wcscpy(Result->Meta.Filename, Fullpath);
+
+            Result->Type = Type;
+            Result->MinFilterType = MinFilter;
+            Result->MagFilterType = MagFilter;
+            Result->WrapModeU = WrapU;
+            Result->WrapModeV = WrapV;
+            Result->Width = Header->Width;
+            Result->Height = Header->Height;
+
+            //u32 *Data = (u32 *)((u8 *)File + Header->BitmapOffset);
+            Result->Data = (u32 *)((u8 *)File + Header->BitmapOffset);
+            Result->Handle = RendererCreateTexture(Result, Result->Data);
+
+            Result->Meta.State = Lock ? AssetState_Locked : AssetState_Loaded; // heh
+            Result->Meta.References = 1;
         }
     }
 
-    return result;
+    return Result;
 }
 
-enum filter_type
+static mesh *LoadMesh(memory_region *Region, WCHAR *Filename, b32 FlipUV = false,
+                      primitive_type PrimType = PrimType_Triangles, b32 Lock = false)
 {
-    filter_type_nearest,
-    filter_type_trilinear,
-};
-
-static GLuint LoadBitmapToTexture2D(char *filename, filter_type filterType = filter_type_trilinear)
-{
-    bitmap bmp = LoadBitmap(filename);
-
-    GLuint tex;
-    glGenTextures(1, &tex);
-    glBindTexture(GL_TEXTURE_2D, tex);
-
-    if(filterType == filter_type_trilinear)
-    {
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        //glGenerateMipmap(GL_TEXTURE_2D);
-    }
-    else
-    {
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    }
-
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, bmp.width, bmp.height, 0, GL_BGR, GL_UNSIGNED_BYTE, bmp.data);
-
-    return tex;
-}
-
-s32 countTokens(const WCHAR *str, WCHAR tok)
-{
-	s32 result = 0;
-
-	while (*str++ != L'\0')
-		if (*str == tok) result++;
-
-	return result;
-}
-
-static simple_mesh *LoadMesh(WCHAR *filename, b32 flipUV = false)
-{
-	std::wifstream fstream;
-	std::wstring line;
-	std::vector<vec3> vertices(0);
+	std::wifstream FStream;
+	std::wstring Line;
+	std::vector<vec3> Vertices(0);
 	std::vector<vec2> UVs(0);
-	std::vector<vec3> normals(0);
-	std::vector<u16> indices(0);
+	std::vector<vec3> Normals(0);
+	std::vector<u16> Indices(0);
 	std::vector<u16> UVIndices(0);
-	std::vector<u16> normalIndices(0);
+	std::vector<u16> NormalIndices(0);
+
+    WCHAR Fullpath[MAX_PATH];
+    Platform.FullPathFromRelativeWchar(Fullpath, Filename, MAX_PATH);
+
+	mesh *Result = (mesh *)AllocStruct(Region, mesh);
+	ZeroMemory(Result, sizeof(mesh));
+
+    Result->Meta.Filename = (WCHAR *)AllocSize(Region, sizeof(WCHAR) * wcslen(Fullpath));
+    wcscpy(Result->Meta.Filename, Fullpath);
+    Result->Meta.References = 1;
+    Result->Meta.State = Lock ? AssetState_Locked : AssetState_Loaded; 
+    Result->PrimType = PrimType;
 
 	// Get just the path
-	WCHAR path[MAX_PATH];
-	wcscpy(path, filename);
-	WCHAR *lastSlash = wcsrchr(path, L'\\');
-	if (lastSlash)
-		*(lastSlash + 1) = L'\0';
+	//WCHAR Path[MAX_PATH];
+	wcscpy(Fullpath, Filename);
+	WCHAR *LastSlash = wcsrchr(Fullpath, L'\\');
+	if (LastSlash)
+		*(LastSlash + 1) = L'\0';
 	else
     {
-        lastSlash = wcsrchr(path, L'/');
-        if (lastSlash)
-            *(lastSlash +1) = L'\0';
+        LastSlash = wcsrchr(Fullpath, L'/');
+        if (LastSlash)
+            *(LastSlash +1) = L'\0';
         else
-		    *path = L'\0';
+		    *Fullpath = L'\0';
     }
-	
-	fstream.open(filename);
 
-	WCHAR first[8];
-	r32 v1, v2, v3;
+	FStream.open(Filename);
 
-	simple_mesh *result = new simple_mesh;
-	ZeroMemory(result, sizeof(simple_mesh));
-	result->material = new simple_material;
-	ZeroMemory(result->material, sizeof(simple_material));
+	WCHAR First[8];
+	r32 V1, V2, V3;
 
 	// try to load the main OBJ file
-	while(std::getline(fstream, line))
+	while(std::getline(FStream, Line))
 	{
-		WCHAR *wcline = new WCHAR[line.size() + 1];
-		std::copy(line.begin(), line.end(), wcline);
-		wcline[line.size()] = '\0';
-		WCHAR *part = wcstok(wcline, L" ");
+		WCHAR *wcLine = new WCHAR[Line.size() + 1];
+		std::copy(Line.begin(), Line.end(), wcLine);
+		wcLine[Line.size()] = '\0';
+		WCHAR *Part = wcstok(wcLine, L" ");
 
-        if(wcslen(wcline) == 0) { continue; }
+        if(wcslen(wcLine) == 0) { continue; }
 
-		if (wcscmp(part, L"v") == 0)
+		if (wcscmp(Part, L"v") == 0)
 		{
-			swscanf(line.c_str(), L"%s%f%f%f", first, &v1, &v2, &v3);
+			swscanf(Line.c_str(), L"%s%f%f%f", First, &V1, &V2, &V3);
 
-			vertices.push_back({ v1, v2, v3 });
+			Vertices.push_back({ V1, V2, V3 });
 		}
-		else if (wcscmp(part, L"vt") == 0)
+		else if (wcscmp(Part, L"vt") == 0)
 		{
-			swscanf(line.c_str(), L"%s%f%f", first, &v1, &v2);
+			swscanf(Line.c_str(), L"%s%f%f", First, &V1, &V2);
 
-			UVs.push_back({ v1, v2 });
+			UVs.push_back({ V1, V2 });
 		}
-		else if (wcscmp(part, L"vn") == 0)
+		else if (wcscmp(Part, L"vn") == 0)
 		{
-			swscanf(line.c_str(), L"%s%f%f%f", first, &v1, &v2, &v3);
+			swscanf(Line.c_str(), L"%s%f%f%f", First, &V1, &V2, &V3);
 
-			normals.push_back({ v1, v2, v3 });
+			Normals.push_back({ V1, V2, V3 });
 		}
-		else if (wcscmp(part, L"f") == 0)
+		else if (wcscmp(Part, L"f") == 0)
 		{
-			s32 slashes = countTokens(line.c_str(), L'/');
+			s32 Slashes = CountTokens(Line.c_str(), L'/');
 			
-			if (slashes == 0) // v
+			if (Slashes == 0) // v
 			{
-				while ((part = wcstok(NULL, L" ")) != NULL)
+				while ((Part = wcstok(NULL, L" ")) != NULL)
 				{
-					indices.push_back((u16)_wtoi(part) - 1);
+					Indices.push_back((u16)_wtoi(Part) - 1);
 				}
 			}
-			else if (slashes == 3) // v/vt
+			else if (Slashes == 3) // v/vt
 			{
-				while ((part = wcstok(NULL, L" /")) != NULL)
+				while ((Part = wcstok(NULL, L" /")) != NULL)
 				{
-					indices.push_back((u16)_wtoi(part) - 1);
-					part = wcstok(NULL, L" /");
-					UVIndices.push_back((u16)_wtoi(part) - 1);
+					Indices.push_back((u16)_wtoi(Part) - 1);
+					Part = wcstok(NULL, L" /");
+					UVIndices.push_back((u16)_wtoi(Part) - 1);
 				}
 			}
-			else if (slashes == 6) // v/vt/vn, v//vn
+			else if (Slashes == 6) // v/vt/vn, v//vn
 			{
-				while ((part = wcstok(NULL, L" /")) != NULL)
+				while ((Part = wcstok(NULL, L" /")) != NULL)
 				{
-					indices.push_back((u16)_wtoi(part) - 1);
-					part = wcstok(NULL, L" /");
-					UVIndices.push_back((u16)_wtoi(part) - 1);
-					part = wcstok(NULL, L" /");
-					normalIndices.push_back((u16)_wtoi(part) - 1);
+					Indices.push_back((u16)_wtoi(Part) - 1);
+					Part = wcstok(NULL, L" /");
+					UVIndices.push_back((u16)_wtoi(Part) - 1);
+					Part = wcstok(NULL, L" /");
+					NormalIndices.push_back((u16)_wtoi(Part) - 1);
 				}
 			}
 		}
-		else if (wcscmp(part, L"mtllib") == 0)
+		else if (wcscmp(Part, L"mtllib") == 0)
 		{
-			part = wcstok(NULL, L" ");
-			wcscpy(result->material->filename, part);
+			Part = wcstok(NULL, L" ");
+			//wcscpy(Result->Material->Metadata.Filename, Part);
 		}
-		else if (wcscmp(part, L"usemtl") == 0)
+		else if (wcscmp(Part, L"usemtl") == 0)
 		{
-			part = wcstok(NULL, L" ");
-			wcscpy(result->material->name, part);
+			Part = wcstok(NULL, L" ");
+			//wcscpy(Result->Material->name, Part);
 		}
 
-		delete wcline;
+		delete wcLine;
 	}
 
 	// Parse the indices
 	// Append the new vertex and its index only if it's unique
 	// Otherwise just append the old index to the list of indices
-	u16 *idxTable = new u16[indices.size()];
+	u16 *idxTable = new u16[Indices.size()];
 	std::vector<vertex> tempVertices(0);
 	std::vector<u16> tempIndices(0);
 	u16 currentIdx = 0;
-	for (s32 i = 0; i < indices.size(); ++i)
+	for (s32 i = 0; i < Indices.size(); ++i)
 	{
 		// Check for duplicates
 		s32 prevIdx = -1;
 		for (s32 j = 0; j < i; j++)
 		{
-			if (indices[j] == indices[i]
+			if (Indices[j] == Indices[i]
 				&& UVIndices[j] == UVIndices[i]
-				&& normalIndices[j] == normalIndices[i])
+				&& NormalIndices[j] == NormalIndices[i])
 			{
 				prevIdx = j;
 				break;
@@ -264,17 +219,17 @@ static simple_mesh *LoadMesh(WCHAR *filename, b32 flipUV = false)
 		if (prevIdx == -1)
 		{
 			idxTable[i] = currentIdx;
-			vertex v = {};
+			vertex V = {};
 
-			v.pos = vertices[indices[i]];
+			V.Pos = Vertices[Indices[i]];
 			if (UVIndices[i] >= 0)
-				v.uv = UVs[UVIndices[i]];
-			//v.uv.x = 1.0f - v.uv.x;
-			//v.uv.y = 1.0f - v.uv.y;
-			if (normalIndices[i] >= 0)
-				v.normal = normals[normalIndices[i]];
+				V.UV = UVs[UVIndices[i]];
+			//V.UV.x = 1.0f - V.UV.x;
+			//V.UV.y = 1.0f - V.UV.y;
+			if (NormalIndices[i] >= 0)
+				V.Normal = Normals[NormalIndices[i]];
 
-			tempVertices.push_back(v);
+			tempVertices.push_back(V);
 			tempIndices.push_back(currentIdx);
 			currentIdx++;
 		}
@@ -284,120 +239,131 @@ static simple_mesh *LoadMesh(WCHAR *filename, b32 flipUV = false)
 	delete idxTable;
 
 	// Fill the result vertex and index arrays from the temp arrays
-	result->numVertices = (u16)tempVertices.size();
-	result->vertices = new vertex[result->numVertices];
+	Result->VertexCount = (u16)tempVertices.size();
+	Result->Vertices = new vertex[Result->VertexCount];
 	/*
-	result->pos = new vec3[result->numVertices];
-	result->normal = new vec3[result->numVertices];
-	result->uv = new vec2[result->numVertices];
+	Result->Pos = new vec3[Result->VertexCount];
+	Result->Normal = new vec3[Result->VertexCount];
+	Result->UV = new vec2[Result->VertexCount];
 	*/
-	for (s32 i = 0; i < result->numVertices; ++i)
+	for (s32 i = 0; i < Result->VertexCount; ++i)
 	{
-		result->vertices[i] = tempVertices[i];
+		Result->Vertices[i] = tempVertices[i];
 		/*
-		result->pos[i] = tempVertices[i].pos;
-		result->normal[i] = tempVertices[i].normal;
-		result->uv[i] = tempVertices[i].uv;
+		Result->Pos[i] = tempVertices[i].Pos;
+		Result->Normal[i] = tempVertices[i].Normal;
+		Result->UV[i] = tempVertices[i].UV;
 		*/
 
-        if(flipUV)
+        if(FlipUV)
         {
-            result->vertices[i].uv.y = -result->vertices[i].uv.y;
-    		//result->uv[i].y = -result->uv[i].y;
+            Result->Vertices[i].UV.y = -Result->Vertices[i].UV.y;
+    		//Result->uv[i].y = -Result->uv[i].y;
         }
 	}
 
-	result->numIndices = (u16)tempIndices.size();
-	result->indices = new u16[result->numIndices];
-	for (s32 i = 0; i < result->numIndices; ++i)
-		result->indices[i] = tempIndices[i];
+	Result->IndexCount = (u16)tempIndices.size();
+	Result->Indices = new u16[Result->IndexCount];
+	for (s32 i = 0; i < Result->IndexCount; ++i)
+		Result->Indices[i] = tempIndices[i];
 
-	fstream.close();
-	
-	// If we found a material filename, try to load it
-	if (result->material->filename)
-	{
-		WCHAR fullpath[MAX_PATH];
-		wcscpy(fullpath, path);
-		wcscat(fullpath, result->material->filename);
+	FStream.close();
 
-		fstream.open(fullpath);
-		
-		bool foundMaterial = false;
+    Result->Handles = RendererCreateBuffers(Result);
 
-		while (std::getline(fstream, line))
-		{
-			WCHAR *wcline = new WCHAR[line.size() + 1];
-			std::copy(line.begin(), line.end(), wcline);
-			wcline[line.size()] = '\0';
-			WCHAR *part = wcstok(wcline, L" ");
+	return Result;
+}
 
-			if (part == nullptr)
-				continue;
+static material *LoadMaterial(memory_region *Region, WCHAR *Filename, b32 Lock = false) 
+{
+    material *Result = (material *)AllocStruct(Region, material);
 
-			if (foundMaterial)
-			{
-				if (wcscmp(part, L"Ka") == 0)
-				{
-					swscanf(line.c_str(), L"%s%f%f%f", first,
-						&result->material->values.ambient.x,
-						&result->material->values.ambient.y,
-						&result->material->values.ambient.z);
-				}
-				if (wcscmp(part, L"Kd") == 0)
-				{
-					swscanf(line.c_str(), L"%s%f%f%f", first,
-						&result->material->values.diffuse.x,
-						&result->material->values.diffuse.y,
-						&result->material->values.diffuse.z);
-				}
-				if (wcscmp(part, L"Ks") == 0)
-				{
-					swscanf(line.c_str(), L"%s%f%f%f", first,
-						&result->material->values.specular.x,
-						&result->material->values.specular.y,
-						&result->material->values.specular.z);
-				}
-				if (wcscmp(part, L"illum") == 0)
-				{
-					swscanf(line.c_str(), L"%s%d", first, &result->material->values.illum);
-				}
-				if (wcscmp(part, L"Ns") == 0)
-				{
-					swscanf(line.c_str(), L"%s%d", first, &result->material->values.specularExp);
-				}
-				if (wcscmp(part, L"map_Kd") == 0)
-				{
-					part = wcstok(NULL, L" ");
-					wcscpy(result->material->textureName, part);
-				}
-			}
+    WCHAR Fullpath[MAX_PATH];
+    Platform.FullPathFromRelativeWchar(Fullpath, Filename, MAX_PATH);
 
-			// Find the relevant material declaration for this mesh
-			if (wcscmp(part, L"newmtl") == 0)
-			{
-				part = wcstok(NULL, L" ");
-				if (wcscmp(part, result->material->name) == 0)
-				{
-					foundMaterial = true;
-				}
-			}
-		}
+	// Get just the path
+    WCHAR Path[MAX_PATH];
+	wcscpy(Path, Fullpath);
+	WCHAR *LastSlash = wcsrchr(Path, L'\\');
+	if (LastSlash)
+		*(LastSlash + 1) = L'\0';
+	else
+    {
+        LastSlash = wcsrchr(Path, L'/');
+        if (LastSlash)
+            *(LastSlash +1) = L'\0';
+        else
+		    *Path = L'\0';
+    }
 
-		fstream.close();
+    Result->Meta.Filename = (WCHAR *)AllocSize(Region, sizeof(WCHAR) * wcslen(Fullpath));
+    wcscpy(Result->Meta.Filename, Fullpath);
+    Result->Meta.References = 1;
+    Result->Meta.State = Lock ? AssetState_Locked : AssetState_Loaded;
 
-		// Load the texture and store it with the material
-		if (wcscmp(result->material->textureName, L"") != 0)
-		{
-			wcscpy(fullpath, path);
-			wcscat(fullpath, result->material->textureName);
-			char cpath[MAX_PATH];
-			wcstombs(cpath, fullpath, MAX_PATH);
-			//result->material->diffuseTex = LoadBitmapToTexture2D(cpath, filter_type_trilinear);
-			result->material->diffuseTexture = LoadBitmap(cpath);
-		}
-	}
+	std::wifstream FStream;
+	std::wstring Line;
+    FStream.open(Fullpath);
+    WCHAR First[8];
 
-	return result;
+    while (std::getline(FStream, Line))
+    {
+        WCHAR *wcLine = new WCHAR[Line.size() + 1];
+        std::copy(Line.begin(), Line.end(), wcLine);
+        wcLine[Line.size()] = '\0';
+        WCHAR *Part = wcstok(wcLine, L" ");
+
+        if (Part == nullptr)
+            continue;
+
+        if (wcscmp(Part, L"Ka") == 0)
+        {
+            swscanf(Line.c_str(), L"%s%f%f%f", First,
+                    &Result->Values.Ambient.x,
+                    &Result->Values.Ambient.y,
+                    &Result->Values.Ambient.z);
+        }
+        if (wcscmp(Part, L"Kd") == 0)
+        {
+            swscanf(Line.c_str(), L"%s%f%f%f", First,
+                    &Result->Values.Diffuse.x,
+                    &Result->Values.Diffuse.y,
+                    &Result->Values.Diffuse.z);
+        }
+        if (wcscmp(Part, L"Ks") == 0)
+        {
+            swscanf(Line.c_str(), L"%s%f%f%f", First,
+                    &Result->Values.Specular.x,
+                    &Result->Values.Specular.y,
+                    &Result->Values.Specular.z);
+        }
+        if (wcscmp(Part, L"illum") == 0)
+        {
+            swscanf(Line.c_str(), L"%s%d", First, &Result->Values.Illum);
+        }
+        if (wcscmp(Part, L"Ns") == 0)
+        {
+            swscanf(Line.c_str(), L"%s%d", First, &Result->Values.SpecularExp);
+        }
+        if (wcscmp(Part, L"map_Kd") == 0)
+        {
+            Part = wcstok(NULL, L" ");
+            wcscpy(Fullpath, Part);
+        }
+    }
+
+    FStream.close();
+
+    // Load the texture and store it with the material
+    if (wcscmp(Fullpath, L"") != 0)
+    {
+        wcscat(Path, Fullpath);
+        Result->DiffuseTexture = LoadTextureFromBMP(Region, Path,
+                                                            TextureType_2D,
+                                                            TextureFilterType_Linear,
+                                                            TextureFilterType_Linear);
+    }
+
+    return Result;
 }
 

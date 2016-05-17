@@ -1,13 +1,11 @@
 #ifndef PLATFORM_H
 #define PLATFORM_H
 
-/*
 #if AAENGINE_DEBUG
 #define Assert(x) if(!(x)) {*(int *)0 = 0;}
 #else
 #define Assert(x)
 #endif
-*/
 
 /*
 typedef int8_t s8;
@@ -38,104 +36,159 @@ typedef uintptr_t uptr;
 
 struct game_button_state
 {
-    s32 halfTransitionCount;
-    b32 endedDown;
+    s32 HalfTransitionCount;
+    b32 EndedDown;
 };
 
 struct game_controller
 {
-    b32 isConnected;
-    b32 isAnalog;
+    b32 IsConnected;
+    b32 IsAnalog;
 
-    vec2 leftStickAvg,
-         rightStickAvg;
+    vec2 LeftStickAvg,
+         RightStickAvg;
 
-    r32 leftTrigger;
-    r32 rightTrigger;
+    r32 LeftTrigger;
+    r32 RightTrigger;
     
     union
     {
-        game_button_state buttons[14];
+        game_button_state Buttons[14];
         struct
         {
-            game_button_state moveUp;
-            game_button_state moveDown;
-            game_button_state moveLeft;
-            game_button_state moveRight;
-            game_button_state start;
-            game_button_state back;
-            game_button_state leftThumb;
-            game_button_state rightThumb;
-            game_button_state leftShoulder;
-            game_button_state rightShoulder;
-            game_button_state actionUp;
-            game_button_state actionDown;
-            game_button_state actionLeft;
-            game_button_state actionRight;
+            game_button_state MoveUp;
+            game_button_state MoveDown;
+            game_button_state MoveLeft;
+            game_button_state MoveRight;
+            game_button_state Start;
+            game_button_state Back;
+            game_button_state LeftThumb;
+            game_button_state RightThumb;
+            game_button_state LeftShoulder;
+            game_button_state RightShoulder;
+            game_button_state ActionUp;
+            game_button_state ActionDown;
+            game_button_state ActionLeft;
+            game_button_state ActionRight;
 
             // NOTE: New buttons must be added above here
-            game_button_state btnCount;
+            game_button_state BtnCount;
         };
     };
 };
 
 enum game_input_mouse_button
 {
-    mouse_button_left,
-    mouse_button_middle,
-    mouse_button_right,
-    mouse_button_ext0,
-    mouse_button_ext1,
+    MouseButton_Left,
+    MouseButton_Middle,
+    MouseButton_Right,
+    MouseButton_Ext0,
+    MouseButton_Ext1,
 
-    mouse_button_count,
+    MouseButton_Count,
 };
 
 struct game_mouse
 {
-    game_button_state buttons[mouse_button_count];
-    r32 x, y;
+    game_button_state Buttons[MouseButton_Count];
+    r32 X, Y;
 };
 
 struct game_input
 {
-    r32 deltaTime;
-    game_controller controllers[5];
-    game_mouse mouse;
+    r32 DeltaTime;
+    game_controller Controllers[5];
+    game_mouse Mouse;
 };
 
-inline game_controller *GetController(game_input *input, u32 idx)
+inline game_controller *GetController(game_input *Input, u32 Idx)
 {
-    Assert(idx < ArrayCount(input->controllers));
-    return &input->controllers[idx];
+    Assert(Idx < ArrayCount(Input->Controllers));
+    return &Input->Controllers[Idx];
 }
+
+//
+// NOTE: Platform API
+//
+
+#define PLATFORM_FREE_FILE(name) void name(void *File)
+typedef PLATFORM_FREE_FILE(platform_free_file);
+
+#define PLATFORM_READ_ENTIRE_FILE(name) void *name(WCHAR *Filename)
+typedef PLATFORM_READ_ENTIRE_FILE(platform_read_entire_file);
+
+struct platform_work_queue;
+#define PLATFORM_WORK_QUEUE_CALLBACK(name) void name(platform_work_queue *Queue, void *Data)
+typedef PLATFORM_WORK_QUEUE_CALLBACK(platform_work_queue_callback);
+
+typedef void platform_add_entry(platform_work_queue *Queue, platform_work_queue_callback *Callback, void *Data);
+typedef void platform_complete_all_work(platform_work_queue *queue);
+
+#define PLATFORM_ALLOCATE_MEMORY(name) void *name(memsize Size)
+typedef PLATFORM_ALLOCATE_MEMORY(platform_allocate_memory);
+
+#define PLATFORM_DEALLOCATE_MEMORY(name) void name(void *Memory)
+typedef PLATFORM_DEALLOCATE_MEMORY(platform_deallocate_memory);
+
+#define PLATFORM_FULL_PATH_FROM_RELATIVE_WCHAR(name) WCHAR *name(WCHAR *AbsPath, const WCHAR *RelPath, size_t MaxLen)
+typedef PLATFORM_FULL_PATH_FROM_RELATIVE_WCHAR(platform_full_path_from_relative_wchar);
+
+struct platform_api
+{
+    platform_free_file *FreeFile;
+    platform_read_entire_file *ReadEntireFile;
+
+    platform_add_entry *AddEntry;
+    platform_complete_all_work *CompleteAllWork;
+
+    platform_allocate_memory *AllocateMemory;
+    platform_deallocate_memory *DeallocateMemory;
+
+    platform_full_path_from_relative_wchar *FullPathFromRelativeWchar;
+};
+
+//
+//
+//
 
 struct game_memory
 {
-    u64 permanentMemorySize;
-    void *permanentMemory;
-    u64 transientMemorySize;
-    void *transientMemory;
+    u64 PermanentMemorySize;
+    void *PermanentMemory;
+    u64 TransientMemorySize;
+    void *TransientMemory;
+
+    platform_api PlatformAPI;
 };
 
 struct game_render_commands
 {
-    u32 width;
-    u32 height;
+    u32 Width;
+    u32 Height;
 
-    mat4 projection;
-    mat4 view;
+    mat4 Projection;
+    mat4 View;
 
-    vec3 lightInvDir;
+    vec3 LightInvDir;
 
-    u32 maxPushBufferSize;
-    u32 pushBufferSize;
-    u8 *pushBufferBase;
+    u32 MaxPushBufferSize;
+    u32 PushBufferSize;
+    u8 *PushBufferBase;
 };
 
-#define PLATFORM_ALLOCATE_MEMORY(name) void *name(memsize size)
-#define PLATFORM_DEALLOCATE_MEMORY(name) void name(void *memory)
+// NOTE: https://en.wikipedia.org/wiki/Win32_Thread_Information_Block
+//       Current thread ID is 0x24 (on 32-bit), but we're 64-bit so x2 -> 0x48.
+inline u32 GetThreadID()
+{
+    /*
+    u8 *ThreadLocal = (u8 *)__readgsqword(0x30);
+    u32 ThreadID = *(u32 *)(ThreadLocal + 0x48);
+    */
+    u32 ThreadID = (u32)__readgsqword(0x48);
+    return ThreadID;
+}
 
-static void GameUpdate(game_memory *memory, game_input *input, game_render_commands *renderCommands);
+static void GameUpdate(game_memory *Memory, s64 ElapsedTime, game_input *Input, game_render_commands *RenderCommands);
 
 #endif
 

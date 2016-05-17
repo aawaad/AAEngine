@@ -3,26 +3,34 @@
 
 enum render_entry_type
 {
-    render_entry_type_clear,
-    render_entry_type_mesh,
+    RenderEntry_Clear,
+    RenderEntry_Wireframe,
+    RenderEntry_Mesh,
 };
 
 struct render_entry_header
 {
-    render_entry_type type;
+    render_entry_type Type;
 };
 
 struct render_entry_clear
 {
-    render_entry_header header;
-    vec4 colour;
+    render_entry_header Header;
+    vec4 Colour;
+};
+
+struct render_entry_wireframe
+{
+    render_entry_header Header;
+    b32 Enabled;
 };
 
 struct render_entry_mesh
 {
-    render_entry_header header;
-    mat4 world;
-    simple_mesh *mesh;
+    render_entry_header Header;
+    mat4 World;
+    mesh *Mesh;
+    material *Material;
 };
 
 #endif

@@ -1,3 +1,4 @@
+#include "renderer.h"
 #include "renderer_opengl.h"
 
 static char *ReadShader(char *filename)
@@ -80,6 +81,117 @@ static GLuint CompileShaders(char *vert, char *frag)
     //if(!success) exit(1);
 
     return shaderProgram;
+}
+
+static texture_handle *RendererCreateTexture(texture *Tex, u32 *Data)
+{
+    texture_handle *Handle = new texture_handle;
+    switch(Tex->Type)
+    {
+        case TextureType_1D:
+        {
+        } break;
+
+        case TextureType_2D:
+        {
+            glGenTextures(1, &(Handle->Value));
+            glBindTexture(GL_TEXTURE_2D, Handle->Value);
+            /*
+            switch(Tex->MagFilterType)
+            {
+                case TextureFilterType_Nearest:
+                {
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+                } break;
+                case TextureFilterType_Linear:
+                {
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                } break;
+            }
+            switch(Tex->MinFilterType)
+            {
+                case TextureFilterType_Nearest:
+                {
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+                } break;
+                case TextureFilterType_Linear:
+                {
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                } break;
+            }
+            switch(Tex->WrapModeU)
+            {
+                case TextureMode_Wrap:
+                {
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+                } break;
+                case TextureMode_Clamp:
+                {
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+                } break;
+            }
+            switch(Tex->WrapModeV)
+            {
+                case TextureFilterType_Nearest:
+                {
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+                } break;
+                case TextureFilterType_Linear:
+                {
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+                } break;
+            }
+            */
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, Tex->MagFilterType);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, Tex->MinFilterType);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, Tex->WrapModeU);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, Tex->WrapModeV);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, Tex->Width, Tex->Height, 0, GL_BGR,
+                         GL_UNSIGNED_BYTE, Data);
+            glBindTexture(GL_TEXTURE_2D, 0);
+        } break;
+
+        case TextureType_3D:
+        {
+        } break;
+    }
+
+    return Handle;
+}
+
+static void RendererDeleteTexture(texture_handle *Handle)
+{
+    glDeleteTextures(1, &Handle->Value);
+    Handle->Value = 0;
+}
+
+static mesh_handles *RendererCreateBuffers(mesh *Mesh)
+{
+    mesh_handles *Handles = new mesh_handles;
+
+    glGenVertexArrays(1, &Handles->VAO);
+    glBindVertexArray(Handles->VAO);
+
+    // NOTE: glDeleteBuffers, also move this to asset loading/unloading
+    glGenBuffers(1, &Handles->VBuf);
+    glBindBuffer(GL_ARRAY_BUFFER, Handles->VBuf);
+    glBufferData(GL_ARRAY_BUFFER, Mesh->VertexCount * sizeof(vertex), Mesh->Vertices, GL_STATIC_DRAW);
+
+    glGenBuffers(1, &Handles->IBuf);
+    glBindBuffer(GL_ARRAY_BUFFER, Handles->IBuf);
+    glBufferData(GL_ARRAY_BUFFER, Mesh->IndexCount * sizeof(u16), Mesh->Indices, GL_STATIC_DRAW);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    return Handles;
+}
+
+static void RendererDeleteBuffers(mesh_handles *Handles)
+{
+    glDeleteVertexArrays(1, &Handles->VAO);
+    glDeleteBuffers(1, &Handles->VBuf);
+    glDeleteBuffers(1, &Handles->IBuf);
+    Handles->VAO = Handles->VBuf = Handles->IBuf = 0;
 }
 
 static b32 InitializeRenderToTexture(u32 width, u32 height)
@@ -412,7 +524,7 @@ static void RenderOpenGL(HWND *window, HDC *deviceContext, u32 x, u32 y, u32 win
 
     // NOTE: MVP from light's POV
     mat4 depthProj = Orthographic(-10, 10, -10, 10, -10, 20);
-    mat4 depthView = LookAt(commands->lightInvDir, Vec3(0, 0, 0), Vec3(0, 1, 0));
+    mat4 depthView = LookAt(commands->LightInvDir, Vec3(0, 0, 0), Vec3(0, 1, 0));
     mat4 depthVP = depthProj * depthView;
 
     for(u32 i = 0; i < 2; ++i)
@@ -426,19 +538,19 @@ static void RenderOpenGL(HWND *window, HDC *deviceContext, u32 x, u32 y, u32 win
         else
         {
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
-            glViewport(x, y, commands->width, commands->height);
+            glViewport(x, y, commands->Width, commands->Height);
             glCullFace(GL_BACK);
             glUseProgram(gShaderProgram);
         }
 
         u32 offset = 0;
-        while(offset < commands->pushBufferSize)
+        while(offset < commands->PushBufferSize)
         {
-            render_entry_header *header = (render_entry_header *)(commands->pushBufferBase + offset);
+            render_entry_header *header = (render_entry_header *)(commands->PushBufferBase + offset);
 
-            switch(header->type)
+            switch(header->Type)
             {
-                case render_entry_type_clear:
+                case RenderEntry_Clear:
                 {
                     render_entry_clear *clear = (render_entry_clear *)header;
                     offset += sizeof(render_entry_clear);
@@ -449,78 +561,96 @@ static void RenderOpenGL(HWND *window, HDC *deviceContext, u32 x, u32 y, u32 win
                     }
                     else
                     {
-                        glClearColor(clear->colour.r, clear->colour.g, clear->colour.b, clear->colour.a);
+                        glClearColor(clear->Colour.r, clear->Colour.g, clear->Colour.b, clear->Colour.a);
                     }
                     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
                 } break;
 
-                case render_entry_type_mesh:
+                case RenderEntry_Wireframe:
+                {
+                    render_entry_wireframe *Entry = (render_entry_wireframe *)header;
+                    offset += sizeof(render_entry_wireframe);
+
+                    if(Entry->Enabled)
+                    {
+                        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+                    }
+                    else
+                    {
+                        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+                    }
+                } break;
+
+                case RenderEntry_Mesh:
                 {
                     render_entry_mesh *entry = (render_entry_mesh *)header;
-                    simple_mesh *mesh = entry->mesh;
+                    mesh *Mesh = entry->Mesh;
+                    material *Material = entry->Material;
                     offset += sizeof(render_entry_mesh);
 
                     if(depthPass)
                     {
-                        mat4 mvp = depthVP * entry->world;
+                        mat4 mvp = depthVP * entry->World;
                         glUniformMatrix4fv(gRTTMVP, 1, GL_FALSE, &mvp.m[0][0]);
                     }
 
-                    if(!mesh->vaoHandle)
+                    if(!Mesh->Handles->VAO)
                     {
-                        glGenVertexArrays(1, &mesh->vaoHandle);
-                        glBindVertexArray(mesh->vaoHandle);
+                        glGenVertexArrays(1, &Mesh->Handles->VAO);
+                        glBindVertexArray(Mesh->Handles->VAO);
                     }
 
                     // NOTE: glDeleteBuffers, also move this to asset loading/unloading
-                    if(!mesh->vbufHandle)
+                    if(!Mesh->Handles->VBuf)
                     {
-                        glGenBuffers(1, &mesh->vbufHandle);
-                        glBindBuffer(GL_ARRAY_BUFFER, mesh->vbufHandle);
-                        glBufferData(GL_ARRAY_BUFFER, mesh->numVertices * sizeof(vertex), mesh->vertices, GL_STATIC_DRAW);
+                        glGenBuffers(1, &Mesh->Handles->VBuf);
+                        glBindBuffer(GL_ARRAY_BUFFER, Mesh->Handles->VBuf);
+                        glBufferData(GL_ARRAY_BUFFER, Mesh->VertexCount * sizeof(vertex), Mesh->Vertices, GL_STATIC_DRAW);
                     }
 
-                    if(!mesh->ibufHandle)
+                    if(!Mesh->Handles->IBuf)
                     {
-                        glGenBuffers(1, &mesh->ibufHandle);
-                        glBindBuffer(GL_ARRAY_BUFFER, mesh->ibufHandle);
-                        glBufferData(GL_ARRAY_BUFFER, mesh->numIndices * sizeof(u16), mesh->indices, GL_STATIC_DRAW);
+                        glGenBuffers(1, &Mesh->Handles->IBuf);
+                        glBindBuffer(GL_ARRAY_BUFFER, Mesh->Handles->IBuf);
+                        glBufferData(GL_ARRAY_BUFFER, Mesh->IndexCount * sizeof(u16), Mesh->Indices, GL_STATIC_DRAW);
                     }
 
                     if(!depthPass)
                     {
-                        mat4 wvp = commands->projection * commands->view * entry->world;
+                        mat4 wvp = commands->Projection * commands->View * entry->World;
                         local_persist mat4 biasMatrix = {
                             0.5f, 0.0f, 0.0f, 0.0f,
                             0.0f, 0.5f, 0.0f, 0.0f,
                             0.0f, 0.0f, 0.5f, 0.0f,
                             0.5f, 0.5f, 0.5f, 1.0f
                         };
-                        mat4 depthBiasMVP = biasMatrix * depthVP * entry->world;
+                        mat4 depthBiasMVP = biasMatrix * depthVP * entry->World;
 
                         glUniformMatrix4fv(gMVP, 1, GL_FALSE, &wvp.m[0][0]);
-                        glUniformMatrix4fv(gM, 1, GL_FALSE, &entry->world.m[0][0]);
-                        glUniformMatrix4fv(gV, 1, GL_FALSE, &commands->view.m[0][0]);
+                        glUniformMatrix4fv(gM, 1, GL_FALSE, &entry->World.m[0][0]);
+                        glUniformMatrix4fv(gV, 1, GL_FALSE, &commands->View.m[0][0]);
                         glUniformMatrix4fv(gDepthBiasMVP, 1, GL_FALSE, &depthBiasMVP.m[0][0]);
-                        glUniform3f(gLightInvDir, commands->lightInvDir.x, commands->lightInvDir.y, commands->lightInvDir.z);
+                        glUniform3f(gLightInvDir, commands->LightInvDir.x, commands->LightInvDir.y, commands->LightInvDir.z);
                         //glUniform3f(gLightPos, 5.0f, 5.0f, 5.0f);
 
                         glActiveTexture(GL_TEXTURE0);
-                        if(mesh->material->diffuseTexture.handle)
+                        if(Material->DiffuseTexture->Handle->Value)
                         {
-                            glBindTexture(GL_TEXTURE_2D, mesh->material->diffuseTexture.handle);
+                            glBindTexture(GL_TEXTURE_2D, Material->DiffuseTexture->Handle->Value);
                         }
                         else
                         {
+                            Assert(!"This shouldn't happen anymore!");
+
                             // NOTE: glDeleteTextures, also handle this in asset loading/unloading
-                            glGenTextures(1, &(mesh->material->diffuseTexture.handle));
-                            glBindTexture(GL_TEXTURE_2D, mesh->material->diffuseTexture.handle);
+                            glGenTextures(1, &(Material->DiffuseTexture->Handle->Value));
+                            glBindTexture(GL_TEXTURE_2D, Material->DiffuseTexture->Handle->Value);
                             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
                             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
                             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
                             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-                            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, mesh->material->diffuseTexture.width, mesh->material->diffuseTexture.height,
-                                    0, GL_BGR, GL_UNSIGNED_BYTE, mesh->material->diffuseTexture.data);
+                            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, Material->DiffuseTexture->Width, Material->DiffuseTexture->Height,
+                                    0, GL_BGR, GL_UNSIGNED_BYTE, 0);//Material->DiffuseTexture->Data);
                         }
 
                         glActiveTexture(GL_TEXTURE1);
@@ -529,23 +659,23 @@ static void RenderOpenGL(HWND *window, HDC *deviceContext, u32 x, u32 y, u32 win
                     }
 
                     // NOTE: Bind vertex buffers
-                    glBindBuffer(GL_ARRAY_BUFFER, mesh->vbufHandle);
+                    glBindBuffer(GL_ARRAY_BUFFER, Mesh->Handles->VBuf);
                     glEnableVertexAttribArray(0);
-                    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)0);
+                    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, Pos));//(void *)0);
                     if(!depthPass)
                     {
                         // NOTE: UVs
                         glEnableVertexAttribArray(1);
-                        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, uv));//(2 * sizeof(r32)));
+                        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, UV));//(2 * sizeof(r32)));
                         // NOTE: Normals
                         glEnableVertexAttribArray(2);
-                        glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, normal));//(3 * sizeof(r32)));
+                        glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void *)offsetof(vertex, Normal));//(3 * sizeof(r32)));
                     }
 
                     // NOTE: Bind index buffer
-                    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh->ibufHandle);
+                    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, Mesh->Handles->IBuf);
 
-                    glDrawElements(GL_TRIANGLES, mesh->numIndices, GL_UNSIGNED_SHORT, 0);
+                    glDrawElements(GL_TRIANGLES, Mesh->IndexCount, GL_UNSIGNED_SHORT, 0);
 
                     glDisableVertexAttribArray(0);
                     if(!depthPass)

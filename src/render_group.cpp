@@ -1,40 +1,51 @@
 #include "render_group.h"
 
-inline void *PushRenderElement(game_render_commands *commands, u32 size)
+inline void *PushRenderElement(game_render_commands *Commands, u32 Size)
 {
-    void *result = 0;
+    void *Result = 0;
 
-    if((commands->pushBufferSize + size) < (commands->maxPushBufferSize))
+    if((Commands->PushBufferSize + Size) < (Commands->MaxPushBufferSize))
     {
-        result = commands->pushBufferBase + commands->pushBufferSize;
-        commands->pushBufferSize += size;
+        Result = Commands->PushBufferBase + Commands->PushBufferSize;
+        Commands->PushBufferSize += Size;
     }
     else
     {
         Assert(!"Ran out of render commands memory!");
     }
 
-    return result;
+    return Result;
 }
 
-inline void PushMesh(game_render_commands *commands, simple_mesh *mesh, mat4 world)
+inline void PushMesh(game_render_commands *Commands, mat4 World, mesh *Mesh, material *Mat)
 {
-    render_entry_mesh *entry = (render_entry_mesh *)PushRenderElement(commands, sizeof(render_entry_mesh));
-    if(entry)
+    render_entry_mesh *Entry = (render_entry_mesh *)PushRenderElement(Commands, sizeof(render_entry_mesh));
+    if(Entry)
     {
-        entry->header.type = render_entry_type_mesh;
-        entry->world = world;
-        entry->mesh = mesh;
+        Entry->Header.Type = RenderEntry_Mesh;
+        Entry->World = World;
+        Entry->Mesh = Mesh;
+        Entry->Material = Mat;
     }
 }
 
-inline void Clear(game_render_commands *commands, vec4 colour)
+inline void Clear(game_render_commands *Commands, vec4 Colour)
 {
-    render_entry_clear *entry = (render_entry_clear *)PushRenderElement(commands, sizeof(render_entry_clear));
-    if(entry)
+    render_entry_clear *Entry = (render_entry_clear *)PushRenderElement(Commands, sizeof(render_entry_clear));
+    if(Entry)
     {
-        entry->header.type = render_entry_type_clear;
-        entry->colour = colour;
+        Entry->Header.Type = RenderEntry_Clear;
+        Entry->Colour = Colour;
+    }
+}
+
+inline void Wireframe(game_render_commands *Commands, b32 Enabled)
+{
+    render_entry_wireframe *Entry = (render_entry_wireframe *)PushRenderElement(Commands, sizeof(render_entry_wireframe));
+    if(Entry)
+    {
+        Entry->Header.Type = RenderEntry_Wireframe;
+        Entry->Enabled = Enabled;
     }
 }
 
