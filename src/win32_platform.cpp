@@ -305,19 +305,35 @@ static void ProcessWindowsMessages(HWND Window, game_controller *KeyboardControl
                         } break;
                         case 'Q':
                         {
-                            ProcessKeyboardKey(&KeyboardController->LeftShoulder, IsDown);
+                            //ProcessKeyboardKey(&KeyboardController->???, IsDown);
                         } break;
                         case 'E':
                         {
-                            ProcessKeyboardKey(&KeyboardController->RightShoulder, IsDown);
+                            //ProcessKeyboardKey(&KeyboardController->???, IsDown);
                         } break;
                         case VK_SPACE:
                         {
-                            //ProcessKeyboardKey(&KeyboardController->???, IsDown);
+                            ProcessKeyboardKey(&KeyboardController->RightShoulder, IsDown);
                         } break;
                         case VK_SHIFT:
                         {
-                            //ProcessKeyboardKey(&KeyboardController->???, IsDown);
+                            ProcessKeyboardKey(&KeyboardController->LeftShoulder, IsDown);
+                        } break;
+                        case VK_UP:
+                        {
+                            ProcessKeyboardKey(&KeyboardController->ActionUp, IsDown);
+                        } break;
+                        case VK_DOWN:
+                        {
+                            ProcessKeyboardKey(&KeyboardController->ActionDown, IsDown);
+                        } break;
+                        case VK_LEFT:
+                        {
+                            ProcessKeyboardKey(&KeyboardController->ActionLeft, IsDown);
+                        } break;
+                        case VK_RIGHT:
+                        {
+                            ProcessKeyboardKey(&KeyboardController->ActionRight, IsDown);
                         } break;
                         case VK_ESCAPE:
                         {
@@ -887,9 +903,9 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
                     QueryPerformanceCounter(&EndCounter);
 
                     u64 CyclesElapsed = EndCycleCount - LastCycleCount;
-                    ElapsedTime = EndCounter.QuadPart - LastCounter.QuadPart;
-                    MSPerFrame = (1000.0f * (r32)ElapsedTime) / (r32)PerfFrequency;
-                    r32 FPS = (r32)PerfFrequency / (r32)ElapsedTime;
+                    u64 Elapsed = EndCounter.QuadPart - LastCounter.QuadPart;
+                    MSPerFrame = (1000.0f * (r32)Elapsed) / (r32)PerfFrequency;
+                    r32 FPS = (r32)PerfFrequency / (r32)Elapsed;
                     r32 MCPF = CyclesElapsed / 1000000.0f;
 
                     char Buf[256];

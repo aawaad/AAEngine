@@ -33,6 +33,12 @@ inline void *AllocSize(memory_region *Region, memsize Size)
 {
     Assert(Region->Used + Size <= Region->Size);
     Assert(Size > 0);
+    
+    // NOTE: Make sure there's enough space to cast to free_memory on Dealloc
+    if(Size < sizeof(free_memory))
+    {
+        Size = sizeof(free_memory);
+    }
 
     free_memory *Prev = nullptr;
     free_memory *Curr = Region->FreeList;

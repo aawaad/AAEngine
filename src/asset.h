@@ -32,11 +32,13 @@ enum texture_type
 //    TextureFilterType_Linear,
 //};
 
+/*
 enum texture_addr_mode
 {
     TextureMode_Wrap,
     TextureMode_Clamp,
 };
+*/
 
 struct texture
 {
@@ -56,7 +58,7 @@ struct texture
     //u32 Handle;
 
     // NOTE: I want to no longer store bitmaps in RAM, just send them straight to the GPU
-    u32 *Data;
+    //u32 *Data;
 };
 
 struct vertex
@@ -81,6 +83,7 @@ struct material
 	texture *DiffuseTexture;
 };
 
+/*
 enum primitive_type
 {
     PrimType_Points,
@@ -89,6 +92,7 @@ enum primitive_type
     PrimType_Triangles,
     PrimType_TriangleStrip,
 };
+*/
 
 struct mesh
 {
@@ -112,13 +116,13 @@ struct mesh
 
 struct game_assets
 {
-    texture Textures[2048];
+    texture *Textures[512];
     u32 TextureCount;
 
-    material Materials[512];
+    material *Materials[512];
     u32 MaterialCount;
 
-    mesh Meshes[512];
+    mesh *Meshes[512];
     u32 MeshCount;
 
     mesh *Ship;

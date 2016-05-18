@@ -25,14 +25,6 @@ static void GameUpdate(game_memory *Memory, s64 ElapsedTime, game_input *Input, 
         GameState->Time = 0;
         GameState->DeltaTime = 0;
 
-        /*
-        GameState->Walls = LoadMesh(L"../data/room_thickwalls.obj");
-        GameState->Pig = LoadMesh(L"../data/pig.obj", true);
-        GameState->Tiger = LoadMesh(L"../data/tiger.obj", true);
-        GameState->Ship = LoadMesh(L"../data/helicoid_ship.obj");
-        GameState->Track = LoadMesh(L"../data/helicoid_mobius.obj");
-        */
-
         GameState->IsInitialised = true;
     }
     GameState->DeltaTime = (r32)(ElapsedTime - GameState->Time) / 1000.0f;
@@ -49,15 +41,35 @@ static void GameUpdate(game_memory *Memory, s64 ElapsedTime, game_input *Input, 
 
         TranState->Assets = (game_assets *)AllocStruct(&TranState->TransientMemory, game_assets);
 
-        TranState->Assets->Ship = LoadMesh(&TranState->TransientMemory, L"../data/helicoid_ship.obj");
-        TranState->Assets->ShipMtl = LoadMaterial(&TranState->TransientMemory, L"../data/helicoid_ship.mtl");
+        transform T;
+        /*
+        mesh *Mesh = LoadMesh(&TranState->TransientMemory, TranState->Assets, L"../data/helicoid_mobius.obj");
+        material *Material = LoadMaterial(&TranState->TransientMemory, TranState->Assets, L"../data/helicoid_mobius.mtl");
+        T.Orientation = MAT4_IDENTITY;
+        T.Scale = {50, 50, 50};
+        AddEntity(GameState, EntityType_Generic, T, {0, 0, 0}, Mesh, Material);
+        */
+
+        TranState->Assets->Ship = LoadMesh(&TranState->TransientMemory, TranState->Assets, L"../data/helicoid_ship.obj");
+        TranState->Assets->ShipMtl = LoadMaterial(&TranState->TransientMemory, TranState->Assets, L"../data/helicoid_ship.mtl");
+
+        T.Position = {5.0f, 0, 5.0f};
+        T.Orientation = Mat4RotationY(PIOVERFOUR * 3);
+        T.Scale = Vec3(1.0f, 1.0f, 1.0f);
+        AddEntity(GameState, EntityType_Ship, T, {0, 0, 0}, TranState->Assets->Ship, TranState->Assets->ShipMtl);
+        T.Position = {-5.0f, 0, 5.0f};
+        T.Orientation = Mat4RotationY(-(PIOVERFOUR * 3));
+        entity *Entity = AddEntity(GameState, EntityType_Ship, T, {0, 0, 0}, TranState->Assets->Ship, TranState->Assets->ShipMtl);
+        Entity->Wireframe = true;
     }
 
 #if 0
-    memsize ptrsize = sizeof(u32) * 1024;
-    void *ptr = AllocSize(&TranState->TransientMemory, ptrsize);
-    void *ptr2 = AllocSize(&TranState->TransientMemory, ptrsize);
-    void *ptr3 = AllocSize(&TranState->TransientMemory, ptrsize);
+    memsize ptrsize = sizeof(WCHAR) * 10;
+    WCHAR *ptr  = (WCHAR *)AllocSize(&TranState->TransientMemory, ptrsize);
+    WCHAR *ptr2 = (WCHAR *)AllocSize(&TranState->TransientMemory, ptrsize);
+    WCHAR *ptr3 = (WCHAR *)AllocSize(&TranState->TransientMemory, ptrsize);
+    wcscpy(ptr, L"123456789\0");
+    wcscpy(ptr2, L"123456789\0");
     DeallocSize(&TranState->TransientMemory, ptr2, ptrsize);
     DeallocSize(&TranState->TransientMemory, ptr3, ptrsize);
     DeallocSize(&TranState->TransientMemory, ptr, ptrsize);
@@ -78,31 +90,85 @@ static void GameUpdate(game_memory *Memory, s64 ElapsedTime, game_input *Input, 
         if(Con->Start.EndedDown)
         {
             GameState->Player = {};
-            P->Position = {0.0f, 0.75f, -1.0f};
-            P->Orientation = MAT4_IDENTITY;
-            P->Forward = {0.0f, 0.0f, 1.0f};
-            P->Up = {0.0f, 1.0f, 0.0f};
-            P->Right = {1.0f, 0.0f, 0.0f};
+            P->Transform.Position = {0.0f, 0.75f, -1.0f};
+            P->Transform.Orientation = MAT4_IDENTITY;
+            P->Basis.Forward = {0.0f, 0.0f, 1.0f};
+            P->Basis.Up = {0.0f, 1.0f, 0.0f};
+            P->Basis.Right = {1.0f, 0.0f, 0.0f};
             if(FrameDelay > 0.2f)
             {
-                GameState->CameraTarget = GameState->CameraTarget ? nullptr : &P->Position;
+                GameState->CameraTarget = GameState->CameraTarget ? nullptr : &P->Transform.Position;
                 FrameDelay = 0;
             }
+        }
+
+        if(Con->ActionUp.EndedDown && FrameDelay > 0.2f)
+        {
+            mesh *Mesh = LoadMesh(&TranState->TransientMemory, TranState->Assets, L"../data/pig.obj");
+            material *Material = LoadMaterial(&TranState->TransientMemory, TranState->Assets, L"../data/pig.mtl");
+            transform T = {};
+            T.Position = {(r32)((GameState->Time / 1000) % 10), 0, 0};
+            T.Orientation = MAT4_IDENTITY;
+            T.Scale = {1, 1, 1};
+            AddEntity(GameState, EntityType_Pig, T, {0, 0, 0}, Mesh, Material);
+            FrameDelay = 0;
+        }
+
+        if(Con->ActionDown.EndedDown && FrameDelay > 0.2f)
+        {
+            entity *Entity;
+            for(u32 Idx = 0; Idx < GameState->EntityCount; ++Idx)
+            {
+                Entity = GameState->Entities + Idx;
+                if(Entity->Type == EntityType_Pig)
+                {
+                    RemoveEntity(GameState, Entity);
+                    break;
+                }
+            }
+            FrameDelay = 0;
+        }
+
+        if(Con->ActionLeft.EndedDown && FrameDelay > 0.2f)
+        {
+            mesh *Mesh = LoadMesh(&TranState->TransientMemory, TranState->Assets, L"../data/cube.obj");
+            material *Material = LoadMaterial(&TranState->TransientMemory, TranState->Assets, L"../data/cube.mtl");
+            transform T = {};
+            //T.Position = {(r32)((u32)GameState->Time % 10), 0, (r32)((u32)GameState->Time % 10)};
+            T.Orientation = MAT4_IDENTITY;
+            T.Scale = {1, 1, 1};
+            AddEntity(GameState, EntityType_Cube, T, {0, 0, 0}, Mesh, Material);
+            FrameDelay = 0;
+        }
+
+        if(Con->ActionRight.EndedDown && FrameDelay > 0.2f)
+        {
+            entity *Entity;
+            for(u32 Idx = 0; Idx < GameState->EntityCount; ++Idx)
+            {
+                Entity = GameState->Entities + Idx;
+                if(Entity->Type == EntityType_Cube)
+                {
+                    RemoveEntity(GameState, Entity);
+                    break;
+                }
+            }
+            FrameDelay = 0;
         }
 
         if(GameState->CameraTarget)
         {
             vec3 DeltaAngles = {};
             r32 ddP = TWOPI * GameState->DeltaTime;
-            if(Con->MoveUp.EndedDown)
+            if(Con->RightShoulder.EndedDown)
             {
                 //DeltaAngles.x += 1.0f * GameState->DeltaTime;
-                P->Velocity.z += 1.0f * GameState->DeltaTime;
+                P->Velocity.z += 0.5f * GameState->DeltaTime;
             }
-            if(Con->MoveDown.EndedDown)
+            if(Con->LeftShoulder.EndedDown)
             {
                 //DeltaAngles.x -= 1.0f * GameState->DeltaTime;
-                P->Velocity.z -= 1.0f * GameState->DeltaTime;
+                P->Velocity.z -= 0.5f * GameState->DeltaTime;
             }
             if(Con->MoveRight.EndedDown)
             {
@@ -144,13 +210,19 @@ static void GameUpdate(game_memory *Memory, s64 ElapsedTime, game_input *Input, 
                     P->Velocity.x = 0;
                 }
             }
+
+            r32 MaxSpeed = 50.0f * GameState->DeltaTime;
+            r32 MinSpeed = 10.0f * GameState->DeltaTime;
+            if(P->Velocity.z > MaxSpeed) { P->Velocity.z = MaxSpeed; }
+            if(P->Velocity.z < -MinSpeed) { P->Velocity.z = -MinSpeed; }
+
             r32 MaxTurn = PI * GameState->DeltaTime;
             if(P->Velocity.x > MaxTurn) { P->Velocity.x = MaxTurn; }
             if(P->Velocity.x < -MaxTurn) { P->Velocity.x = -MaxTurn; }
 
-            vec3 Fwd = Normalized(P->Orientation * Vec4(P->Forward, 0)).xyz;
-            P->Position += Fwd * P->Velocity.z;
-            vec3 Up = Normalized(P->Orientation * Vec4(P->Up, 0)).xyz;
+            vec3 Fwd = Normalized(P->Transform.Orientation * Vec4(P->Basis.Forward, 0)).xyz;
+            P->Transform.Position += Fwd * P->Velocity.z;
+            vec3 Up = Normalized(P->Transform.Orientation * Vec4(P->Basis.Up, 0)).xyz;
             vec3 Right = Normalized(Cross(Fwd, Up));
             Pfd = Fwd;
             Pup = Up;
@@ -159,14 +231,9 @@ static void GameUpdate(game_memory *Memory, s64 ElapsedTime, game_input *Input, 
             quat Rot = QuatAxisAngle(Fwd, DeltaAngles.z);
             Rot *= QuatAxisAngle(Up, P->Velocity.x);//DeltaAngles.y);
             Rot *= QuatAxisAngle(Right, DeltaAngles.x);
-            P->Orientation *= Mat4Rotation(Rot);
+            P->Transform.Orientation *= Mat4Rotation(Rot);
         }
     }
-    
-    mat4 PigSca = Mat4Scaling(1.0f + sinf(4.0f * GameState->Time) * 0.25f);
-    mat4 PigRot = Mat4RotationY(sinf((r32)GameState->Time));
-    mat4 PigTrs = Mat4Translation(4.0f, 0, 0);
-    mat4 PigWorld = PigRot * PigTrs * PigSca;
 
     //
     // NOTE: Render
@@ -179,11 +246,11 @@ static void GameUpdate(game_memory *Memory, s64 ElapsedTime, game_input *Input, 
     {
         //vec3 Cam = ((Mat4Translation(GameState->Player.Position) * GameState->Player.Orientation) * Vec4(0, 2.0f, -5.0f, 0)).xyz;
         player *P = &GameState->Player;
-        RenderCommands->View = LookAt(P->Position + Pfd * -5.0f + Pup * 2.0f, P->Position, Pup);
+        RenderCommands->View = LookAt(P->Transform.Position + Pfd * -5.0f + Pup * 2.0f, P->Transform.Position, Pup);
     }
     else
     {
-        r32 Limit = 3.0f * PIOVERFOUR;
+        r32 Limit = TWOPI;//3.0f * PIOVERFOUR;
         r32 Offset = -PIOVERTWO;
         RenderCommands->View = LookAt(Vec3(cosf(Clamp((Input->Mouse.X * 2.0f - 1.0f) * Limit, -Limit, Limit) + Offset) * -6.0f, 4.0f,
                                            sinf(Clamp((Input->Mouse.X * 2.0f - 1.0f) * Limit, -Limit, Limit) + Offset) * 6.0f),
@@ -192,19 +259,50 @@ static void GameUpdate(game_memory *Memory, s64 ElapsedTime, game_input *Input, 
                                            Vec3(0, 1, 0));
     }
 
-    /*
-    PushMesh(RenderCommands, GameState->Walls, MAT4_IDENTITY);
-    PushMesh(RenderCommands, GameState->Pig, PigWorld);
-    PushMesh(RenderCommands, GameState->Tiger, Mat4Translation(0, 0.75f, 0));
-    PushMesh(RenderCommands, GameState->Track, Mat4Translation(0, 0, 60.0f) * Mat4Scaling(100.0f));
-    */
-    PushMesh(RenderCommands, Mat4Translation( 5.0f, 0, 5.0f) * Mat4RotationY(PIOVERFOUR * 3),
-            TranState->Assets->Ship, TranState->Assets->ShipMtl);
-    Wireframe(RenderCommands, true);
-    PushMesh(RenderCommands, Mat4Translation(-5.0f, 0, 5.0f) * Mat4RotationY(-(PIOVERFOUR * 3)),
-            TranState->Assets->Ship, TranState->Assets->ShipMtl);
-    Wireframe(RenderCommands, false);
+    // NOTE: This currently goes through every single entity and renders it
+    for(u32 Idx = 0; Idx < GameState->EntityCount; ++Idx)
+    {
+        entity *Entity = GameState->Entities + Idx;
+        switch(Entity->Type)
+        {
+            case EntityType_Generic:
+            case EntityType_Ship:
+            {
+                if(Entity->Wireframe)
+                    Wireframe(RenderCommands, true);
+
+                mat4 T = Mat4Translation(Entity->Transform.Position);
+                mat4 R = Entity->Transform.Orientation;
+                mat4 S = Mat4Scaling(Entity->Transform.Scale);
+                PushMesh(RenderCommands, T * R * S, Entity->Mesh, Entity->Material);
+
+                if(Entity->Wireframe)
+                    Wireframe(RenderCommands, false);
+            } break;
+
+            case EntityType_Pig:
+            {
+                static r32 a = 0;
+                a += GameState->DeltaTime;
+                mat4 PigSca = Mat4Scaling(1.0f + sinf(4.0f * a) * 0.25f);
+                mat4 PigRot = Mat4RotationY(a);
+                mat4 PigTrs = Mat4Translation(Entity->Transform.Position);
+                mat4 PigWorld = PigRot * PigTrs * PigSca;
+
+                PushMesh(RenderCommands, PigWorld, Entity->Mesh, Entity->Material);
+            } break;
+
+            case EntityType_Player:
+            {
+            } break;
+        }
+    }
+
+    PushMesh(RenderCommands, MAT4_IDENTITY, TranState->Assets->Ship, TranState->Assets->ShipMtl);
+
     if(GameState->CameraTarget)
-        PushMesh(RenderCommands, Mat4Translation(GameState->Player.Position) * GameState->Player.Orientation,
-                 TranState->Assets->Ship, TranState->Assets->ShipMtl);
+    {
+        PushMesh(RenderCommands, Mat4Translation(GameState->Player.Transform.Position) * GameState->Player.Transform.Orientation,
+                TranState->Assets->Ship, TranState->Assets->ShipMtl);
+    }
 }

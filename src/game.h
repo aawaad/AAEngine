@@ -5,6 +5,7 @@
 #include "platform.h"
 #include "allocator.h"
 #include "asset.h"
+#include "asset_loader.h"
 
 /*
     TODO:
@@ -108,15 +109,47 @@
 
 */
 
-struct player
+enum entity_type
+{
+    EntityType_Invalid,
+    EntityType_Generic,
+    EntityType_Ship,
+    EntityType_Pig,
+    EntityType_Cube,
+    EntityType_Player,
+};
+
+struct transform
 {
     vec3 Position;
-    vec3 Velocity;
     mat4 Orientation;
+    vec3 Scale;
+};
 
+struct basis
+{
     vec3 Forward;
     vec3 Up;
     vec3 Right;
+};
+
+struct entity
+{
+    entity_type Type;
+    transform Transform;
+    vec3 Velocity;
+    mesh *Mesh;
+    material *Material;
+    b32 Wireframe;
+};
+
+struct player
+{
+    transform Transform;
+    vec3 Velocity;
+    basis Basis;
+    mesh *Mesh;
+    material *Material;
 };
 
 struct game_state
@@ -128,6 +161,9 @@ struct game_state
 
     player Player;
     vec3 *CameraTarget;
+
+    entity Entities[1024];
+    u32 EntityCount;
 };
 
 struct transient_state
@@ -139,6 +175,40 @@ struct transient_state
 };
 
 global_variable platform_api Platform;
+
+static entity *AddEntity(game_state *GameState, entity_type Type,
+                         transform Transform, vec3 Velocity,
+                         mesh *Mesh, material *Material)
+{
+    Assert(GameState->EntityCount < ArrayCount(GameState->Entities));
+    u32 Idx = GameState->EntityCount++;
+
+    entity *Entity = GameState->Entities + Idx;
+    Entity->Type = Type;
+    Entity->Transform = Transform;
+    Entity->Velocity = Velocity;
+    Entity->Mesh = Mesh;
+    Mesh->Meta.References++;
+    Entity->Material = Material;
+    Material->Meta.References++;
+
+    return Entity;
+}
+
+static void RemoveEntity(game_state *GameState, entity *Entity)
+{
+    Assert(GameState->EntityCount > 0);
+    entity Temp = GameState->Entities[GameState->EntityCount - 1];
+    GameState->Entities[GameState->EntityCount - 1] = *Entity;
+    Entity->Type = Temp.Type;
+    Entity->Transform = Temp.Transform;
+    Entity->Velocity = Temp.Velocity;
+    Entity->Mesh = Temp.Mesh;
+    Entity->Material = Temp.Material;
+    Entity->Wireframe = Temp.Wireframe;
+    --GameState->EntityCount;
+    GameState->Entities[GameState->EntityCount] = {};
+}
 
 #endif
 

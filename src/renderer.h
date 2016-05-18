@@ -24,6 +24,21 @@ enum texture_filter_type
     TextureFilterType_Linear = GL_LINEAR,
 };
 
+enum texture_addr_mode
+{
+    TextureMode_Wrap = GL_REPEAT,
+    TextureMode_Clamp = GL_CLAMP_TO_EDGE,
+};
+
+enum primitive_type
+{
+    PrimType_Points = GL_POINTS,
+    PrimType_Line = GL_LINES,
+    PrimType_LineStrip = GL_LINE_STRIP,
+    PrimType_Triangles = GL_TRIANGLES,
+    PrimType_TriangleStrip = GL_TRIANGLE_STRIP,
+};
+
 struct texture;
 static texture_handle *RendererCreateTexture(texture *Tex, u32 *Data);
 struct mesh;

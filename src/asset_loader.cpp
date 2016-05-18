@@ -1,47 +1,51 @@
-#include "asset.h"
+#include "asset_loader.h"
 
-#include <fstream>
-#include <string>
-#include <vector>
-
-#pragma pack(push, 1)
-struct bitmap_header
+static u32 FindTextureSlot(game_assets *Assets, WCHAR *Filename)
 {
-    u16 FileType;
-    u32 FileSize;
-    u16 Reserved1;
-    u16 Reserved2;
-    u32 BitmapOffset;
-    u32 Size;
-    s32 Width;
-    s32 Height;
-    u16 Planes;
-    u16 BitsPerPixel;
-};
-#pragma pack(pop)
+    Assert(Assets->TextureCount < ArrayCount(Assets->Textures));
+    u32 Hash = ComputeHash(Filename, ArrayCount(Assets->Textures));
 
-s32 CountTokens(const WCHAR *Str, WCHAR Tok)
-{
-	s32 Result = 0;
+    while(Assets->Textures[Hash] && wcscmp(Assets->Textures[Hash]->Meta.Filename, Filename))
+    {
+        Hash = ++Hash % ArrayCount(Assets->Textures);
+    }
 
-	while (*Str++ != L'\0')
-		if (*Str == Tok) Result++;
-
-	return Result;
+    return Hash;
 }
 
-static texture *LoadTextureFromBMP(memory_region *Region, WCHAR *Filename,
-                                  texture_type Type = TextureType_2D,
-                                  texture_filter_type MinFilter = TextureFilterType_Nearest,
-                                  texture_filter_type MagFilter = TextureFilterType_Nearest,
-                                  texture_addr_mode WrapU = TextureMode_Wrap,
-                                  texture_addr_mode WrapV = TextureMode_Wrap,
-                                  b32 Lock = false)
+static texture *LookupTextureHash(game_assets *Assets, WCHAR *Filename)
 {
     texture *Result = nullptr;
 
+    u32 Hash = FindTextureSlot(Assets, Filename);
+
+    if(Assets->Textures[Hash])
+    {
+        Assert(wcscmp(Filename, Assets->Textures[Hash]->Meta.Filename) == 0);
+        Result = Assets->Textures[Hash];
+    }
+
+    return Result;
+}
+
+static texture *LoadTextureFromBMP(memory_region *Region, game_assets *Assets, WCHAR *Filename,
+                                  texture_type Type,
+                                  texture_filter_type MinFilter,
+                                  texture_filter_type MagFilter,
+                                  texture_addr_mode WrapU,
+                                  texture_addr_mode WrapV,
+                                  b32 Lock)
+{
     WCHAR Fullpath[MAX_PATH];
     Platform.FullPathFromRelativeWchar(Fullpath, Filename, MAX_PATH);
+
+    texture *Result = nullptr;
+
+    if(Result = LookupTextureHash(Assets, Fullpath))
+    {
+        ++Result->Meta.References;
+        return Result;
+    }
 
     void *File = Platform.ReadEntireFile(Fullpath);
 
@@ -52,7 +56,7 @@ static texture *LoadTextureFromBMP(memory_region *Region, WCHAR *Filename,
         if((Header->FileSize >= 54) && (*(u8 *)File == 'B') && (*((u8 *)File + 1) == 'M'))
         {
             Result = AllocStruct(Region, texture);
-            Result->Meta.Filename = (WCHAR *)AllocSize(Region, sizeof(WCHAR) * wcslen(Fullpath));
+            Result->Meta.Filename = (WCHAR *)AllocSize(Region, sizeof(WCHAR) * wcslen(Fullpath) + 2);
             wcscpy(Result->Meta.Filename, Fullpath);
 
             Result->Type = Type;
@@ -63,21 +67,77 @@ static texture *LoadTextureFromBMP(memory_region *Region, WCHAR *Filename,
             Result->Width = Header->Width;
             Result->Height = Header->Height;
 
-            //u32 *Data = (u32 *)((u8 *)File + Header->BitmapOffset);
-            Result->Data = (u32 *)((u8 *)File + Header->BitmapOffset);
-            Result->Handle = RendererCreateTexture(Result, Result->Data);
+            u32 *Data = (u32 *)((u8 *)File + Header->BitmapOffset);
+            //Result->Data = (u32 *)((u8 *)File + Header->BitmapOffset);
+            Result->Handle = RendererCreateTexture(Result, Data);
 
             Result->Meta.State = Lock ? AssetState_Locked : AssetState_Loaded; // heh
             Result->Meta.References = 1;
+
+            u32 Slot = FindTextureSlot(Assets, Filename);
+            Assets->Textures[Slot] = Result;
+            ++Assets->TextureCount;
         }
+        Platform.FreeFile(File);
     }
 
     return Result;
 }
 
-static mesh *LoadMesh(memory_region *Region, WCHAR *Filename, b32 FlipUV = false,
-                      primitive_type PrimType = PrimType_Triangles, b32 Lock = false)
+static texture *LoadTexture2D(memory_region *Region, game_assets *Assets, WCHAR *Filename, b32 Lock)
 {
+    texture *Result = nullptr;
+
+    Result = LoadTextureFromBMP(Region, Assets, Filename, TextureType_2D,
+                                TextureFilterType_Linear,
+                                TextureFilterType_Linear,
+                                TextureMode_Wrap,
+                                TextureMode_Wrap,
+                                Lock);
+    return Result;
+}
+
+// TODO: Cleanup this code duplication
+static u32 FindMeshSlot(game_assets *Assets, WCHAR *Filename)
+{
+    Assert(Assets->TextureCount < ArrayCount(Assets->Meshes));
+    u32 Hash = ComputeHash(Filename, ArrayCount(Assets->Meshes));
+
+    while(Assets->Meshes[Hash] && wcscmp(Assets->Meshes[Hash]->Meta.Filename, Filename))
+    {
+        Hash = ++Hash % ArrayCount(Assets->Meshes);
+    }
+
+    return Hash;
+}
+
+static mesh *LookupMeshHash(game_assets *Assets, WCHAR *Filename)
+{
+    mesh *Result = nullptr;
+    u32 Hash = ComputeHash(Filename, ArrayCount(Assets->Meshes));
+
+    if(Assets->Meshes[Hash])
+    {
+        Assert(wcscmp(Filename, Assets->Meshes[Hash]->Meta.Filename) == 0);
+        Result = Assets->Meshes[Hash];
+    }
+
+    return Result;
+}
+
+static mesh *LoadMesh(memory_region *Region, game_assets *Assets, WCHAR *Filename, b32 FlipUV,
+                      primitive_type PrimType, b32 Lock)
+{
+    WCHAR Fullpath[MAX_PATH];
+    Platform.FullPathFromRelativeWchar(Fullpath, Filename, MAX_PATH);
+
+    mesh *Result;
+    if(Result = LookupMeshHash(Assets, Fullpath))
+    {
+        ++Result->Meta.References;
+        return Result;
+    }
+
 	std::wifstream FStream;
 	std::wstring Line;
 	std::vector<vec3> Vertices(0);
@@ -87,34 +147,36 @@ static mesh *LoadMesh(memory_region *Region, WCHAR *Filename, b32 FlipUV = false
 	std::vector<u16> UVIndices(0);
 	std::vector<u16> NormalIndices(0);
 
-    WCHAR Fullpath[MAX_PATH];
-    Platform.FullPathFromRelativeWchar(Fullpath, Filename, MAX_PATH);
-
-	mesh *Result = (mesh *)AllocStruct(Region, mesh);
-	ZeroMemory(Result, sizeof(mesh));
-
-    Result->Meta.Filename = (WCHAR *)AllocSize(Region, sizeof(WCHAR) * wcslen(Fullpath));
-    wcscpy(Result->Meta.Filename, Fullpath);
-    Result->Meta.References = 1;
-    Result->Meta.State = Lock ? AssetState_Locked : AssetState_Loaded; 
-    Result->PrimType = PrimType;
-
 	// Get just the path
-	//WCHAR Path[MAX_PATH];
-	wcscpy(Fullpath, Filename);
-	WCHAR *LastSlash = wcsrchr(Fullpath, L'\\');
+	WCHAR Path[MAX_PATH];
+	wcscpy(Path, Filename);
+	WCHAR *LastSlash = wcsrchr(Path, L'\\');
 	if (LastSlash)
 		*(LastSlash + 1) = L'\0';
 	else
     {
-        LastSlash = wcsrchr(Fullpath, L'/');
+        LastSlash = wcsrchr(Path, L'/');
         if (LastSlash)
             *(LastSlash +1) = L'\0';
         else
-		    *Fullpath = L'\0';
+		    *Path = L'\0';
     }
 
 	FStream.open(Filename);
+
+    if(!FStream.good())
+    {
+        return nullptr;
+    }
+
+	Result = (mesh *)AllocStruct(Region, mesh);
+	ZeroMemory(Result, sizeof(mesh));
+
+    Result->Meta.References = 1;
+    Result->Meta.Filename = (WCHAR *)AllocSize(Region, sizeof(WCHAR) * wcslen(Fullpath) + 2);
+    wcscpy(Result->Meta.Filename, Fullpath);
+    Result->Meta.State = Lock ? AssetState_Locked : AssetState_Loaded; 
+    Result->PrimType = PrimType;
 
 	WCHAR First[8];
 	r32 V1, V2, V3;
@@ -182,12 +244,10 @@ static mesh *LoadMesh(memory_region *Region, WCHAR *Filename, b32 FlipUV = false
 		else if (wcscmp(Part, L"mtllib") == 0)
 		{
 			Part = wcstok(NULL, L" ");
-			//wcscpy(Result->Material->Metadata.Filename, Part);
 		}
 		else if (wcscmp(Part, L"usemtl") == 0)
 		{
 			Part = wcstok(NULL, L" ");
-			//wcscpy(Result->Material->name, Part);
 		}
 
 		delete wcLine;
@@ -224,10 +284,6 @@ static mesh *LoadMesh(memory_region *Region, WCHAR *Filename, b32 FlipUV = false
 			V.Pos = Vertices[Indices[i]];
 			if (UVIndices[i] >= 0)
 				V.UV = UVs[UVIndices[i]];
-			//V.UV.x = 1.0f - V.UV.x;
-			//V.UV.y = 1.0f - V.UV.y;
-			if (NormalIndices[i] >= 0)
-				V.Normal = Normals[NormalIndices[i]];
 
 			tempVertices.push_back(V);
 			tempIndices.push_back(currentIdx);
@@ -240,30 +296,19 @@ static mesh *LoadMesh(memory_region *Region, WCHAR *Filename, b32 FlipUV = false
 
 	// Fill the result vertex and index arrays from the temp arrays
 	Result->VertexCount = (u16)tempVertices.size();
-	Result->Vertices = new vertex[Result->VertexCount];
-	/*
-	Result->Pos = new vec3[Result->VertexCount];
-	Result->Normal = new vec3[Result->VertexCount];
-	Result->UV = new vec2[Result->VertexCount];
-	*/
+	Result->Vertices = (vertex *)AllocSize(Region, sizeof(vertex) * Result->VertexCount); //new vertex[Result->VertexCount];
 	for (s32 i = 0; i < Result->VertexCount; ++i)
 	{
 		Result->Vertices[i] = tempVertices[i];
-		/*
-		Result->Pos[i] = tempVertices[i].Pos;
-		Result->Normal[i] = tempVertices[i].Normal;
-		Result->UV[i] = tempVertices[i].UV;
-		*/
 
         if(FlipUV)
         {
             Result->Vertices[i].UV.y = -Result->Vertices[i].UV.y;
-    		//Result->uv[i].y = -Result->uv[i].y;
         }
 	}
 
 	Result->IndexCount = (u16)tempIndices.size();
-	Result->Indices = new u16[Result->IndexCount];
+	Result->Indices = (u16 *)AllocSize(Region, sizeof(u16) * Result->IndexCount); //new u16[Result->IndexCount];
 	for (s32 i = 0; i < Result->IndexCount; ++i)
 		Result->Indices[i] = tempIndices[i];
 
@@ -271,15 +316,52 @@ static mesh *LoadMesh(memory_region *Region, WCHAR *Filename, b32 FlipUV = false
 
     Result->Handles = RendererCreateBuffers(Result);
 
+    u32 Slot = FindMeshSlot(Assets, Result->Meta.Filename);
+    Assets->Meshes[Slot] = Result;
+    ++Assets->MeshCount;
+
 	return Result;
 }
 
-static material *LoadMaterial(memory_region *Region, WCHAR *Filename, b32 Lock = false) 
+// TODO: Cleanup this code duplication
+static u32 FindMaterialSlot(game_assets *Assets, WCHAR *Filename)
 {
-    material *Result = (material *)AllocStruct(Region, material);
+    Assert(Assets->TextureCount < ArrayCount(Assets->Materials));
+    u32 Hash = ComputeHash(Filename, ArrayCount(Assets->Materials));
 
+    while(Assets->Materials[Hash] && wcscmp(Assets->Materials[Hash]->Meta.Filename, Filename))
+    {
+        Hash = ++Hash % ArrayCount(Assets->Materials);
+    }
+
+    return Hash;
+}
+
+static material *LookupMaterialHash(game_assets *Assets, WCHAR *Filename)
+{
+    material *Result = nullptr;
+    u32 Hash = ComputeHash(Filename, ArrayCount(Assets->Materials));
+
+    if(Assets->Materials[Hash])
+    {
+        Assert(wcscmp(Filename, Assets->Materials[Hash]->Meta.Filename) == 0);
+        Result = Assets->Materials[Hash];
+    }
+
+    return Result;
+}
+
+static material *LoadMaterial(memory_region *Region, game_assets *Assets, WCHAR *Filename, b32 Lock) 
+{
     WCHAR Fullpath[MAX_PATH];
     Platform.FullPathFromRelativeWchar(Fullpath, Filename, MAX_PATH);
+
+    material *Result;
+    if(Result = LookupMaterialHash(Assets, Fullpath))
+    {
+        ++Result->Meta.References;
+        return Result;
+    }
 
 	// Get just the path
     WCHAR Path[MAX_PATH];
@@ -296,15 +378,21 @@ static material *LoadMaterial(memory_region *Region, WCHAR *Filename, b32 Lock =
 		    *Path = L'\0';
     }
 
-    Result->Meta.Filename = (WCHAR *)AllocSize(Region, sizeof(WCHAR) * wcslen(Fullpath));
-    wcscpy(Result->Meta.Filename, Fullpath);
-    Result->Meta.References = 1;
-    Result->Meta.State = Lock ? AssetState_Locked : AssetState_Loaded;
-
 	std::wifstream FStream;
 	std::wstring Line;
     FStream.open(Fullpath);
     WCHAR First[8];
+
+    if(!FStream.good())
+    {
+        return nullptr;
+    }
+
+    Result = (material *)AllocStruct(Region, material);
+    Result->Meta.Filename = (WCHAR *)AllocSize(Region, sizeof(WCHAR) * wcslen(Fullpath) + 2);
+    wcscpy(Result->Meta.Filename, Fullpath);
+    Result->Meta.References = 1;
+    Result->Meta.State = Lock ? AssetState_Locked : AssetState_Loaded;
 
     while (std::getline(FStream, Line))
     {
@@ -354,16 +442,72 @@ static material *LoadMaterial(memory_region *Region, WCHAR *Filename, b32 Lock =
 
     FStream.close();
 
+    u32 Slot = FindMaterialSlot(Assets, Filename);
+    Assets->Materials[Slot] = Result;
+    ++Assets->MaterialCount;
+
     // Load the texture and store it with the material
     if (wcscmp(Fullpath, L"") != 0)
     {
         wcscat(Path, Fullpath);
-        Result->DiffuseTexture = LoadTextureFromBMP(Region, Path,
+        Result->DiffuseTexture = LoadTextureFromBMP(Region, Assets, Path,
                                                             TextureType_2D,
                                                             TextureFilterType_Linear,
                                                             TextureFilterType_Linear);
     }
 
     return Result;
+}
+
+static void UnloadTexture(memory_region *Region, game_assets *Assets, texture *Texture)
+{
+    if(Texture->Meta.References <= 1)
+    {
+        u32 Slot = FindTextureSlot(Assets, Texture->Meta.Filename);
+        if(Assets->Textures[Slot] == Texture)
+        {
+            Assets->Textures[Slot] = nullptr;
+        }
+        DeallocSize(Region, Texture->Meta.Filename, sizeof(WCHAR) * wcslen(Texture->Meta.Filename));
+        DeallocSize(Region, Texture, sizeof(texture));
+    }
+}
+
+static void UnloadMesh(memory_region *Region, game_assets *Assets, mesh *Mesh)
+{
+    if(Mesh->Meta.References <= 1)
+    {
+        u32 Slot = FindMeshSlot(Assets, Mesh->Meta.Filename);
+        if(Assets->Meshes[Slot] == Mesh)
+        {
+            Assets->Meshes[Slot] = nullptr;
+        }
+        DeallocSize(Region, Mesh->Meta.Filename, sizeof(WCHAR) * wcslen(Mesh->Meta.Filename));
+        DeallocSize(Region, Mesh, sizeof(mesh));
+    }
+}
+
+static void UnloadMaterial(memory_region *Region, game_assets *Assets, material *Material)
+{
+    if(Material->Meta.References <= 1)
+    {
+        if(Material->DiffuseTexture)
+        {
+            UnloadTexture(Region, Assets, Material->DiffuseTexture);
+        }
+
+        u32 Slot = FindMaterialSlot(Assets, Material->Meta.Filename);
+        if(Assets->Materials[Slot] == Material)
+        {
+            Assets->Materials[Slot] = nullptr;
+        }
+
+        DeallocSize(Region, Material->Meta.Filename, sizeof(WCHAR) * wcslen(Material->Meta.Filename));
+        DeallocSize(Region, Material, sizeof(material));
+    }
+    else
+    {
+        --Material->Meta.References;
+    }
 }
 

@@ -156,6 +156,12 @@ static texture_handle *RendererCreateTexture(texture *Tex, u32 *Data)
         } break;
     }
 
+    GLenum err = glGetError();
+    while(err != GL_NO_ERROR)
+    {
+        err = glGetError();
+    }
+
     return Handle;
 }
 
@@ -182,6 +188,12 @@ static mesh_handles *RendererCreateBuffers(mesh *Mesh)
     glBufferData(GL_ARRAY_BUFFER, Mesh->IndexCount * sizeof(u16), Mesh->Indices, GL_STATIC_DRAW);
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    GLenum err = glGetError();
+    while(err != GL_NO_ERROR)
+    {
+        err = glGetError();
+    }
 
     return Handles;
 }
@@ -330,191 +342,6 @@ static void InitializeOpenGL(HWND hWnd, HDC *hDC, HGLRC *hRC, u32 windowWidth, u
     gPreviewSampler = glGetUniformLocation(gPreviewProgram, "sampler");
 }
 
-#if 0
-static void RenderMesh(opengl_mesh *mesh, mat4 *model, mat4 *view, mat4 *projection,
-                       mat4 *depthMVP, vec3 *lightInvDir, b32 depthPass = false)
-{
-    if(depthPass)
-    {
-        mat4 depth = *projection * *view * *model;
-        glUniformMatrix4fv(gRTTMVP, 1, GL_FALSE, &depth.m[0][0]);
-    }
-    else
-    {
-        // NOTE: MVP
-        mat4 mvp = *projection * *view * *model;
-
-        local_persist mat4 biasMatrix = {
-            0.5f, 0.0f, 0.0f, 0.0f,
-            0.0f, 0.5f, 0.0f, 0.0f,
-            0.0f, 0.0f, 0.5f, 0.0f,
-            0.5f, 0.5f, 0.5f, 1.0f
-        };
-        *depthMVP *= *model;
-        mat4 depthBiasMVP = biasMatrix * *depthMVP;
-
-        glUniformMatrix4fv(gMVP, 1, GL_FALSE, &mvp.m[0][0]);
-        glUniformMatrix4fv(gM, 1, GL_FALSE, &model->m[0][0]);
-        glUniformMatrix4fv(gV, 1, GL_FALSE, &view->m[0][0]);
-        glUniformMatrix4fv(gDepthBiasMVP, 1, GL_FALSE, &depthBiasMVP.m[0][0]);
-        glUniform3f(gLightInvDir, lightInvDir->x, lightInvDir->y, lightInvDir->z);
-
-        //vec3 lightPos = Vec3(10.0f, 10.0f, 10.0f);
-        //glUniform3f(gLightPos, lightPos.x, lightPos.y, lightPos.z);
-
-        // NOTE: Bind the texture
-        if(mesh->material->diffuseTex)
-        {
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, mesh->material->diffuseTex);
-            glUniform1i(gSampler, 0);
-        }
-
-        glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, gDepthTexture);
-        glUniform1i(gShadowSampler, 1);
-    }
-
-    // NOTE: Vertices
-    glEnableVertexAttribArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, mesh->vbuf);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
-
-    if(!depthPass)
-    {
-        // NOTE: UVs
-        glEnableVertexAttribArray(1);
-        glBindBuffer(GL_ARRAY_BUFFER, mesh->uvbuf);
-        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, 0);
-
-        // NOTE: Normals
-        glEnableVertexAttribArray(2);
-        glBindBuffer(GL_ARRAY_BUFFER, mesh->nbuf);
-        glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 0, 0);
-    }
-
-    // NOTE: Indices
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh->ibuf);
-
-    glDrawElements(GL_TRIANGLES, mesh->numIndices, GL_UNSIGNED_SHORT, 0);
-
-    glDisableVertexAttribArray(0);
-    if(!depthPass)
-    {
-        glDisableVertexAttribArray(1);
-        glDisableVertexAttribArray(2);
-    }
-}
-
-static void RenderOpenGL(HWND *window, HDC *deviceContext, u32 x, u32 y, u32 width, u32 height, game_render_commands *renderCommands)
-{
-    // NOTE: Render into framebuffer
-    glViewport(0, 0, 1024, 1024);
-    glBindFramebuffer(GL_FRAMEBUFFER, gFramebuffer);
-
-    glEnable(GL_CULL_FACE);
-    glCullFace(GL_BACK);
-
-    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    // NOTE: Shadow/depth pass
-
-    glUseProgram(gRTTShaderProgram);
-
-    vec3 lightInvDir = Vec3(2.0f, 4.0f, 2.0f);
-
-    // NOTE: MVP from light's POV
-    mat4 depthProj = Orthographic(-10, 10, -10, 10, -10, 20);
-    mat4 depthView = LookAt(lightInvDir, Vec3(0, 0, 0), Vec3(0, 1, 0));
-    mat4 depthMVP = depthProj * depthView;
-
-    // NOTE: Spotlight
-    //vec3 lightPos = Vec3(5, 20, 20);
-    //mat4 depthProj = Perspective(PI / 2.0f, 1.0f, 2.0f, 50.0f);
-    //mat4 depthView = LookAt(lightInvDir, Vec3(0, 0, 0), Vec3(0, 1, 0));
-
-    /*    
-    for(u32 i = 0; i < ArrayCount(gMeshes); ++i)
-    {
-        RenderMesh(gMeshes[i], &depthView, &depthProj, Vec3(0.0f, -1.0f + 1.0f * i, 0.0f), &depthMVP, &lightInvDir, true);
-    }
-    */
-
-    mat4 wallsModel = Mat4RotationY(-PIOVERTWO);
-    wallsModel = MAT4_IDENTITY;
-    RenderMesh(gMeshes[0], &wallsModel, &depthView, &depthProj, &depthMVP, &lightInvDir, true);
-
-    local_persist r32 angle = 0.0f;
-    mat4 pigSca = Mat4Scaling(1.0f + sinf(4.0f * angle) * 0.25f);
-    mat4 pigRot = Mat4RotationY(angle);
-    mat4 pigTrs = Mat4Translation(4.0f, 0, 0);
-    mat4 pigModel = pigRot * pigTrs * pigSca;
-
-    angle+= 0.025f;
-
-    RenderMesh(gMeshes[1], &pigModel, &depthView, &depthProj, &depthMVP, &lightInvDir, true);
-
-    // NOTE: Main rendering pass
-
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glViewport(0, 0, width, height);
-    glCullFace(GL_BACK);
-
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    glUseProgram(gShaderProgram);
-
-    POINT p;
-    GetCursorPos(&p);
-    ScreenToClient(*window, &p);
-
-    vec2 nCursorPos = Vec2((r32)p.x / (r32)width, (r32)p.y / (r32)height);
-    vec2 ndcCursorPos = nCursorPos * 2.0f - 1.0f;
-
-    // NOTE: Camera
-    //mat4 projection = Perspective(PI / 6.0f + nCursorPos.y  * PI / 3.0f, (r32)width/(r32)height, 0.1f, 100.0f);
-    mat4 projection = Perspective(30.0f + nCursorPos.y * 60.0f, (r32)width/(r32)height, 0.1f, 100.0f);
-    //mat4 view = LookAt(Vec3(6.0f, 4.0f, -6.0f),
-    r32 limit = 3.0f * PIOVERFOUR;
-    r32 offset = -PIOVERTWO;
-    mat4 view = LookAt(Vec3(cosf(Clamp(ndcCursorPos.x * limit, -limit, limit) + offset) * -6.0f, 4.0f,
-                            sinf(Clamp(ndcCursorPos.x * limit, -limit, limit) + offset) * 6.0f),
-                       Vec3(0, 1, 0),
-                       Vec3(0, 1, 0));
-
-    /*
-    for(u32 i = 0; i < ArrayCount(gMeshes); ++i)
-    {
-        RenderMesh(gMeshes[i], &view, &projection, Vec3(0, 0, 0) , &depthMVP, &lightInvDir, false);
-    }
-    */
-    RenderMesh(gMeshes[0], &wallsModel, &view, &projection, &depthMVP, &lightInvDir, false);
-    RenderMesh(gMeshes[1], &pigModel, &view, &projection, &depthMVP, &lightInvDir, false);
-
-    // NOTE: Render depth texture to quad (testing)
-    //       Need to disable GL_COMPARE_R_TO_TEXTURE
-#if 0
-    glViewport(0, 0, 256, 256);
-    glUseProgram(gPreviewProgram);
-
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, gDepthTexture);
-    glUniform1i(gPreviewSampler, 0);
-
-    glEnableVertexAttribArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, gQuadBuf);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
-
-    glDrawArrays(GL_TRIANGLES, 0, 6);
-
-    glDisableVertexAttribArray(0);
-#endif
-
-    SwapBuffers(*deviceContext);
-}
-#endif
-
 static void RenderOpenGL(HWND *window, HDC *deviceContext, u32 x, u32 y, u32 windowWidth, u32 windowHeight, game_render_commands *commands)
 {
     //glViewport(0, 0, commands->width, commands->height);
@@ -594,6 +421,7 @@ static void RenderOpenGL(HWND *window, HDC *deviceContext, u32 x, u32 y, u32 win
                         glUniformMatrix4fv(gRTTMVP, 1, GL_FALSE, &mvp.m[0][0]);
                     }
 
+                    /*
                     if(!Mesh->Handles->VAO)
                     {
                         glGenVertexArrays(1, &Mesh->Handles->VAO);
@@ -614,6 +442,7 @@ static void RenderOpenGL(HWND *window, HDC *deviceContext, u32 x, u32 y, u32 win
                         glBindBuffer(GL_ARRAY_BUFFER, Mesh->Handles->IBuf);
                         glBufferData(GL_ARRAY_BUFFER, Mesh->IndexCount * sizeof(u16), Mesh->Indices, GL_STATIC_DRAW);
                     }
+                    */
 
                     if(!depthPass)
                     {
@@ -638,20 +467,6 @@ static void RenderOpenGL(HWND *window, HDC *deviceContext, u32 x, u32 y, u32 win
                         {
                             glBindTexture(GL_TEXTURE_2D, Material->DiffuseTexture->Handle->Value);
                         }
-                        else
-                        {
-                            Assert(!"This shouldn't happen anymore!");
-
-                            // NOTE: glDeleteTextures, also handle this in asset loading/unloading
-                            glGenTextures(1, &(Material->DiffuseTexture->Handle->Value));
-                            glBindTexture(GL_TEXTURE_2D, Material->DiffuseTexture->Handle->Value);
-                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-                            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, Material->DiffuseTexture->Width, Material->DiffuseTexture->Height,
-                                    0, GL_BGR, GL_UNSIGNED_BYTE, 0);//Material->DiffuseTexture->Data);
-                        }
 
                         glActiveTexture(GL_TEXTURE1);
                         glBindTexture(GL_TEXTURE_2D, gDepthTexture);
@@ -675,7 +490,7 @@ static void RenderOpenGL(HWND *window, HDC *deviceContext, u32 x, u32 y, u32 win
                     // NOTE: Bind index buffer
                     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, Mesh->Handles->IBuf);
 
-                    glDrawElements(GL_TRIANGLES, Mesh->IndexCount, GL_UNSIGNED_SHORT, 0);
+                    glDrawElements(Mesh->PrimType, Mesh->IndexCount, GL_UNSIGNED_SHORT, 0);
 
                     glDisableVertexAttribArray(0);
                     if(!depthPass)
@@ -693,6 +508,12 @@ static void RenderOpenGL(HWND *window, HDC *deviceContext, u32 x, u32 y, u32 win
             }
         }
         depthPass = false;
+    }
+
+    GLenum err = glGetError();
+    while(err != GL_NO_ERROR)
+    {
+        err = glGetError();
     }
 
     SwapBuffers(*deviceContext);
