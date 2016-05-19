@@ -284,6 +284,7 @@ static mesh *LoadMesh(memory_region *Region, game_assets *Assets, WCHAR *Filenam
 			V.Pos = Vertices[Indices[i]];
 			if (UVIndices[i] >= 0)
 				V.UV = UVs[UVIndices[i]];
+			V.Normal = Normals[NormalIndices[i]];
 
 			tempVertices.push_back(V);
 			tempIndices.push_back(currentIdx);

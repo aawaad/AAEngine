@@ -564,10 +564,10 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 {
     LoadXInput();
 
+#if 0
     platform_work_queue WorkQueue = {};
     MakeQueue(&WorkQueue, 4);
 
-#if 0
     AddEntry(&WorkQueue, ThreadOutputString, "String A0");
     AddEntry(&WorkQueue, ThreadOutputString, "String A1");
     AddEntry(&WorkQueue, ThreadOutputString, "String A2");
@@ -641,7 +641,7 @@ int CALLBACK WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
             InitDSound(WindowHandle, SoundSpec.SamplesPerSec, SoundSpec.BufferSize);
             FillSoundBuffer(&SoundSpec, 0, SoundSpec.LatencySampleCount * SoundSpec.BytesPerSample);
-            GlobalSoundBuffer->Play(0, 0, DSBPLAY_LOOPING);
+            //GlobalSoundBuffer->Play(0, 0, DSBPLAY_LOOPING);
 
             GetWindowRect(WindowHandle, &GlobalWindowRect);
             // NOTE: OpenGL init

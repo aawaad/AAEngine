@@ -8,7 +8,7 @@
 #include "asset_loader.h"
 
 /*
-    TODO:
+    TODO: (- todo, / partial, x done)
 
     Maths library (largely finished as another project)
       - Still needs capsules and their intersections
@@ -25,7 +25,7 @@
     Renderer
       x Take input/commands from a buffer sent from the game layer
       - Light management
-      - Camera management? (or should this be purely in the game layer which just sends a view matrix?)
+      / Camera management? (or should this be purely in the game layer which just sends a view matrix?)
       - Frustrum culling (needs bounding spheres/scene hierarchy)
       - Material / shader switching support
       - Debug drawing
@@ -39,12 +39,12 @@
         - Fonts/text
       - Load from pack file
         - Custom file format
-      - Streaming (dynamic allocation)
-      - Resource management (i.e. don't load the same file multiple times (fixed with pack file?))
+      / Streaming (dynamic allocation)
+      / Resource management (i.e. don't load the same file multiple times)
 
     Entity System
-      - Tracking (table, IDs etc)
-      - Updating
+      x Tracking (table, IDs etc)
+      x Updating
       - Collision
         - Collision flags
       - General utility (get relative/canonical position, get ground point, etc)
@@ -85,7 +85,7 @@
         - Torque
 
     Multithreading
-      - Work queue?
+      x Work queue?
       - Asset streaming?
       - Audio streaming?
 

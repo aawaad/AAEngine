@@ -104,7 +104,7 @@ static void GameUpdate(game_memory *Memory, s64 ElapsedTime, game_input *Input, 
 
         if(Con->ActionUp.EndedDown && FrameDelay > 0.2f)
         {
-            mesh *Mesh = LoadMesh(&TranState->TransientMemory, TranState->Assets, L"../data/pig.obj");
+            mesh *Mesh = LoadMesh(&TranState->TransientMemory, TranState->Assets, L"../data/pig.obj", true);
             material *Material = LoadMaterial(&TranState->TransientMemory, TranState->Assets, L"../data/pig.mtl");
             transform T = {};
             T.Position = {(r32)((GameState->Time / 1000) % 10), 0, 0};
@@ -267,6 +267,7 @@ static void GameUpdate(game_memory *Memory, s64 ElapsedTime, game_input *Input, 
         {
             case EntityType_Generic:
             case EntityType_Ship:
+            case EntityType_Cube:
             {
                 if(Entity->Wireframe)
                     Wireframe(RenderCommands, true);
@@ -298,7 +299,7 @@ static void GameUpdate(game_memory *Memory, s64 ElapsedTime, game_input *Input, 
         }
     }
 
-    PushMesh(RenderCommands, MAT4_IDENTITY, TranState->Assets->Ship, TranState->Assets->ShipMtl);
+    //PushMesh(RenderCommands, MAT4_IDENTITY, TranState->Assets->Ship, TranState->Assets->ShipMtl);
 
     if(GameState->CameraTarget)
     {

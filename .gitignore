@@ -29,6 +29,7 @@
 
 # vim
 *.swp
+*.swo
 *.vim
 
 build/
