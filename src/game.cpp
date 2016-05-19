@@ -128,7 +128,7 @@ static void GameUpdate(game_memory *Memory, s64 ElapsedTime, game_input *Input, 
                 Entity = GameState->Entities + Idx;
                 if(Entity->Type == EntityType_Pig)
                 {
-                    RemoveEntity(GameState, Entity);
+                    RemoveEntity(&TranState->TransientMemory, TranState->Assets, GameState, Entity);
                     break;
                 }
             }
@@ -137,7 +137,8 @@ static void GameUpdate(game_memory *Memory, s64 ElapsedTime, game_input *Input, 
 
         if(Con->ActionLeft.EndedDown && FrameDelay > 0.2f)
         {
-            mesh *Mesh = LoadMesh(&TranState->TransientMemory, TranState->Assets, L"../data/cube.obj");
+            //mesh *Mesh = LoadMesh(&TranState->TransientMemory, TranState->Assets, L"../data/cube.obj");
+            mesh *Mesh = LoadMesh(&TranState->TransientMemory, TranState->Assets, L"../data/helicoid_mobius.obj");
             material *Material = LoadMaterial(&TranState->TransientMemory, TranState->Assets, L"../data/cube.mtl");
             transform T = {};
             T.Position = {(r32)(((u32)GameState->Time / 1000) % 10), 1.0f,
@@ -156,7 +157,7 @@ static void GameUpdate(game_memory *Memory, s64 ElapsedTime, game_input *Input, 
                 Entity = GameState->Entities + Idx;
                 if(Entity->Type == EntityType_Cube)
                 {
-                    RemoveEntity(GameState, Entity);
+                    RemoveEntity(&TranState->TransientMemory, TranState->Assets, GameState, Entity);
                     break;
                 }
             }

@@ -395,6 +395,7 @@ static material *LoadMaterial(memory_region *Region, game_assets *Assets, WCHAR 
     Result->Meta.References = 1;
     Result->Meta.State = Lock ? AssetState_Locked : AssetState_Loaded;
 
+    WCHAR TexPath[MAX_PATH];
     while (std::getline(FStream, Line))
     {
         WCHAR *wcLine = new WCHAR[Line.size() + 1];
@@ -437,20 +438,20 @@ static material *LoadMaterial(memory_region *Region, game_assets *Assets, WCHAR 
         if (wcscmp(Part, L"map_Kd") == 0)
         {
             Part = wcstok(NULL, L" ");
-            wcscpy(Fullpath, Part);
+            wcscpy(TexPath, Part);
         }
     }
 
     FStream.close();
 
-    u32 Slot = FindMaterialSlot(Assets, Filename);
+    u32 Slot = FindMaterialSlot(Assets, Fullpath);
     Assets->Materials[Slot] = Result;
     ++Assets->MaterialCount;
 
     // Load the texture and store it with the material
-    if (wcscmp(Fullpath, L"") != 0)
+    if (wcscmp(TexPath, L"") != 0)
     {
-        wcscat(Path, Fullpath);
+        wcscat(Path, TexPath);
         Result->DiffuseTexture = LoadTextureFromBMP(Region, Assets, Path,
                                                             TextureType_2D,
                                                             TextureFilterType_Linear,
@@ -462,7 +463,10 @@ static material *LoadMaterial(memory_region *Region, game_assets *Assets, WCHAR 
 
 static void UnloadTexture(memory_region *Region, game_assets *Assets, texture *Texture)
 {
-    if(Texture->Meta.References <= 1)
+    if(!Texture) return;
+
+    --Texture->Meta.References;
+    if(Texture->Meta.References == 0)
     {
         u32 Slot = FindTextureSlot(Assets, Texture->Meta.Filename);
         if(Assets->Textures[Slot] == Texture)
@@ -479,7 +483,7 @@ static void UnloadMesh(memory_region *Region, game_assets *Assets, mesh *Mesh)
     if(!Mesh) return;
 
     --Mesh->Meta.References;
-    if(Mesh->Meta.References <= 1)
+    if(Mesh->Meta.References == 0)
     {
         u32 Slot = FindMeshSlot(Assets, Mesh->Meta.Filename);
         if(Assets->Meshes[Slot] == Mesh)
