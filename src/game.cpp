@@ -49,15 +49,21 @@ static void GameUpdate(game_memory *Memory, s64 ElapsedTime, game_input *Input, 
         T.Scale = {50, 50, 50};
         AddEntity(GameState, EntityType_Generic, T, {0, 0, 0}, Mesh, Material);
         */
+        mesh *Mesh = LoadMesh (&TranState->TransientMemory, TranState->Assets, L"../data/room_thickwalls.obj");
+        material *Material = LoadMaterial(&TranState->TransientMemory, TranState->Assets, L"../data/room_thickwalls.mtl");
+        T.Orientation = MAT4_IDENTITY;
+        T.Scale = {10, 10, 10};
+        T.Position = {0, 0, 0};
+        AddEntity(GameState, EntityType_Generic, T, {0, 0, 0}, Mesh, Material);
 
         TranState->Assets->Ship = LoadMesh(&TranState->TransientMemory, TranState->Assets, L"../data/helicoid_ship.obj");
         TranState->Assets->ShipMtl = LoadMaterial(&TranState->TransientMemory, TranState->Assets, L"../data/helicoid_ship.mtl");
 
-        T.Position = {5.0f, 0, 5.0f};
+        T.Position = {5.0f, 1.0f, 5.0f};
         T.Orientation = Mat4RotationY(PIOVERFOUR * 3);
         T.Scale = Vec3(1.0f, 1.0f, 1.0f);
         AddEntity(GameState, EntityType_Ship, T, {0, 0, 0}, TranState->Assets->Ship, TranState->Assets->ShipMtl);
-        T.Position = {-5.0f, 0, 5.0f};
+        T.Position = {-5.0f, 1.0f, 5.0f};
         T.Orientation = Mat4RotationY(-(PIOVERFOUR * 3));
         entity *Entity = AddEntity(GameState, EntityType_Ship, T, {0, 0, 0}, TranState->Assets->Ship, TranState->Assets->ShipMtl);
         Entity->Wireframe = true;
@@ -134,7 +140,8 @@ static void GameUpdate(game_memory *Memory, s64 ElapsedTime, game_input *Input, 
             mesh *Mesh = LoadMesh(&TranState->TransientMemory, TranState->Assets, L"../data/cube.obj");
             material *Material = LoadMaterial(&TranState->TransientMemory, TranState->Assets, L"../data/cube.mtl");
             transform T = {};
-            //T.Position = {(r32)((u32)GameState->Time % 10), 0, (r32)((u32)GameState->Time % 10)};
+            T.Position = {(r32)(((u32)GameState->Time / 1000) % 10), 1.0f,
+                          (r32)(((u32)GameState->Time / 1000) % 10)};
             T.Orientation = MAT4_IDENTITY;
             T.Scale = {1, 1, 1};
             AddEntity(GameState, EntityType_Cube, T, {0, 0, 0}, Mesh, Material);

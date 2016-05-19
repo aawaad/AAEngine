@@ -476,6 +476,9 @@ static void UnloadTexture(memory_region *Region, game_assets *Assets, texture *T
 
 static void UnloadMesh(memory_region *Region, game_assets *Assets, mesh *Mesh)
 {
+    if(!Mesh) return;
+
+    --Mesh->Meta.References;
     if(Mesh->Meta.References <= 1)
     {
         u32 Slot = FindMeshSlot(Assets, Mesh->Meta.Filename);
@@ -490,7 +493,10 @@ static void UnloadMesh(memory_region *Region, game_assets *Assets, mesh *Mesh)
 
 static void UnloadMaterial(memory_region *Region, game_assets *Assets, material *Material)
 {
-    if(Material->Meta.References <= 1)
+    if(!Material) return;
+
+    --Material->Meta.References;
+    if(Material->Meta.References == 0)
     {
         if(Material->DiffuseTexture)
         {
@@ -505,10 +511,6 @@ static void UnloadMaterial(memory_region *Region, game_assets *Assets, material 
 
         DeallocSize(Region, Material->Meta.Filename, sizeof(WCHAR) * wcslen(Material->Meta.Filename));
         DeallocSize(Region, Material, sizeof(material));
-    }
-    else
-    {
-        --Material->Meta.References;
     }
 }
 

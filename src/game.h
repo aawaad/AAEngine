@@ -176,6 +176,8 @@ struct transient_state
 
 global_variable platform_api Platform;
 
+// IMPORTANT: It is currently assumed that LoadMesh and LoadMaterial were called before this!
+//      TODO: Do something about this dependency
 static entity *AddEntity(game_state *GameState, entity_type Type,
                          transform Transform, vec3 Velocity,
                          mesh *Mesh, material *Material)
@@ -188,16 +190,18 @@ static entity *AddEntity(game_state *GameState, entity_type Type,
     Entity->Transform = Transform;
     Entity->Velocity = Velocity;
     Entity->Mesh = Mesh;
-    Mesh->Meta.References++;
+    //Mesh->Meta.References++;
     Entity->Material = Material;
-    Material->Meta.References++;
+    //Material->Meta.References++;
 
     return Entity;
 }
 
-static void RemoveEntity(game_state *GameState, entity *Entity)
+static void RemoveEntity(memory_region *Region, game_assets *Assets, game_state *GameState, entity *Entity)
 {
     Assert(GameState->EntityCount > 0);
+    UnloadMesh(Region, Assets, Entity->Mesh);
+    UnloadMaterial(Region, Assets, Entity->Material);
     entity Temp = GameState->Entities[GameState->EntityCount - 1];
     GameState->Entities[GameState->EntityCount - 1] = *Entity;
     Entity->Type = Temp.Type;
